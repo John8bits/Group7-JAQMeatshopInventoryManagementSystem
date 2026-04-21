@@ -1,0 +1,70 @@
+    /*Admin login design */
+
+*{
+    box-sizing:border-box;
+    font-family:Arial, Helvetica, sans-serif;
+}
+
+body{
+    margin:0;
+    height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    background:rgb(81, 185, 245);
+}
+
+.login-box{
+    background:white;
+    padding:35px;
+    width:320px;
+    border-radius:8px;
+    box-shadow:0 10px 25px rgba(0,0,0,0.2);
+}
+
+.login-box h2{
+    text-align:center;
+    margin-bottom:20px;
+}
+
+input{
+    width:100%;
+    padding:10px;
+    margin-bottom:12px;
+    border:1px solid #ccc;
+    border-radius:5px;
+}
+
+button{
+    width:100%;
+    padding:10px;
+    border:none;
+    background:#2193b0;
+    color:white;
+    font-size:16px;
+    border-radius:5px;
+    cursor:pointer;
+}
+
+button:hover{
+    background:blue;
+}
+
+.error{
+    color:red;
+    font-size:13px;
+    text-align:left;
+    margin:-5px 0 10px 0;
+    /* margin-bottom:10px;
+    margin-top:-5px; */
+}
+
+.go_to_cashier{
+    text-align:center;
+    margin-top:20px;
+}
+
+.go_to_cashier a{
+    text-decoration:none;
+    color:#2193b0;
+}
