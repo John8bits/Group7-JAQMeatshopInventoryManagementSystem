@@ -42,6 +42,7 @@ $conn = $db->conn;
 
 .header h2 {
     margin: 0;
+    color:black;
 }
 
 
@@ -95,6 +96,7 @@ td {
     padding: 12px;
     text-align: center;
     border-bottom: 1px solid #eee;
+    color:black;
 }
 
 tr:hover {

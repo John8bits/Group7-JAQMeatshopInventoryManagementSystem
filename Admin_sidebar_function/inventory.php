@@ -46,6 +46,10 @@ body { font-family: Arial; }
     padding: 20px;
 }
 
+h2{
+    color:black;
+}
+
 .header {
     display:flex;
     justify-content: space-between;
@@ -65,7 +69,7 @@ body { font-family: Arial; }
     background:#b7320c;
 }
 
-/* TABLE */
+
 table {
     width:100%;
     border-collapse:collapse;
@@ -85,9 +89,10 @@ td {
     padding:10px;
     text-align:center;
     border-bottom:1px solid #eee;
+    color:black;
 }
 
-/* MODAL */
+
 .modal {
     display:none;
     position:fixed;
@@ -107,7 +112,7 @@ td {
 }
 
 .modal input, .modal select {
-    width:100%;
+    width:94%;
     margin:5px 0;
     padding:10px;
 }
@@ -128,8 +133,7 @@ td {
         <h2> Inventory</h2>
         <button class="btn" onclick="openModal()">+ Add Product</button>
     </div>
-
-    <!-- TABLE -->
+   
     <table>
         <tr>
             <th>Name</th>
@@ -158,11 +162,10 @@ td {
 
 </div>
 
-<!-- ADD MODAL -->
 <div id="addModal" class="modal">
     <div class="modal-content">
         <span class="close" onclick="closeModal()">&times;</span>
-        <h3>Add Product</h3>
+        <h3 style="color:black;">Add Product</h3>
 
         <form method="POST">
             <input type="text" name="name" placeholder="Product Name" required>
