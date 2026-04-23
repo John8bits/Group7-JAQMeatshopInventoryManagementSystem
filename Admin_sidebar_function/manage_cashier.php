@@ -1,8 +1,8 @@
 <?php
     
-require_once "../DatabaseConnection/database.php";
-$db = new Database();
-$conn = $db->conn;
+    require_once "../DatabaseConnection/database.php";
+    $db = new Database();
+    $conn = $db->conn;
 
     if (isset($_POST['add'])) {
         $hashedPassword = password_hash($_POST['password'], PASSWORD_DEFAULT);
@@ -12,12 +12,10 @@ $conn = $db->conn;
             VALUES (?, ?, 'cashier')
         ");
         $stmt->execute([
-            $_POST['name'],
             $_POST['username'],
             $hashedPassword,
         ]);
     }
-
 
     if (isset($_GET['delete'])) {
         $stmt = $conn->prepare("DELETE FROM users WHERE id = ?");
@@ -65,14 +63,20 @@ $conn = $db->conn;
     margin-top: 15px;
     border-radius: 10px;
     box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+    display:flex;
+    justify-content: center;
+    width: 900px;
+    border:1px solid black;
 }
 
 .form-box input {
-    width: 45%;
+    /* width: 45%; */
+    width: 100%;
     padding: 10px;
     margin: 5px;
     border: 1px solid #ccc;
     border-radius: 8px;
+    display: block;
 }
 
 
@@ -101,7 +105,6 @@ tr:hover {
     background: #f5f5f5;
 }
 
-
 .delete {
     color: white;
     background: red;
@@ -113,6 +116,7 @@ tr:hover {
 .delete:hover {
     background: darkred;
 }
+
 </style>
 
 <div class="container">

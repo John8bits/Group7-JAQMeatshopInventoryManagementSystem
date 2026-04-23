@@ -1,0 +1,111 @@
+/*login style*/
+
+    * {
+        box-sizing: border-box;
+        font-family: Arial, sans-serif;
+    }   
+
+    body {
+        margin: 0;
+        height: 100vh;
+        /* background: linear-gradient(135deg, #D53E0F, #FF7A3D); */
+        background: #091413;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-image: url('bg_login.png');
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+    }
+
+    .container {
+        background: #fff;
+        color: #333;
+        padding: 40px 30px;
+        border-radius: 10px;
+        width: 320px;
+        /* width:380px; */
+        /* height:50%; */
+        box-shadow: 0 1px 5px rgba(236, 233, 233, 0.94); 
+        text-align: center;
+        /* border:4px solid black; */
+    }
+
+    h2 {
+        margin-bottom: 30px;
+        margin-top:-2px;
+        /* color: #D53E0F; */
+        color:darkred;
+    }
+
+    input, select {
+        width: 100%;
+        padding: 10px;
+        margin-bottom: 12px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+
+    input:focus, select:focus {
+        outline: none;
+        /* border-color: #D53E0F; */
+        border-color: rgb(140, 71, 71);
+    }   
+
+    button {
+        width: 100%;
+        padding: 10px;
+        background: #D53E0F;
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: 0.3s;
+        font-size: 17px;
+    }
+
+    button:hover {
+        background: #b7320c;
+    }
+
+    .error {
+        background: #ffe0e0;
+        color: #a10000;
+        padding: 8px;
+        margin-bottom: 10px;
+        border-radius: 5px;
+        font-size: 13px;
+    }
+
+    .password-c {
+        position: relative;
+    }
+
+    .password-c input {
+        width: 100%;
+        padding-right: 40px;
+    }
+
+    .toggle-password {
+        position: absolute;
+        right: 10px;
+        top: 40%;
+        transform: translateY(-50%);
+        cursor: pointer;
+        color: #555;
+        font-size: 16px;
+    }
+
+    .toggle-password:hover {
+        color: black;
+    }
+
+    footer{
+        position: absolute;
+        margin:1% 0 0 5%;
+        font-size: 10px;
+    }
+

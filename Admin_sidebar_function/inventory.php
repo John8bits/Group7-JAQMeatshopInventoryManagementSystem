@@ -1,125 +1,126 @@
 <?php
-require_once "../DatabaseConnection/database.php";
+    require_once "../DatabaseConnection/database.php";
 
-$db = new Database();
-$conn = $db->conn;
+    $db = new Database();
+    $conn = $db->conn;
 
-/* ADD PRODUCT */
-if (isset($_POST['add'])) {
+    if (isset($_POST['add'])) {
+
+        $stmt = $conn->prepare("
+            INSERT INTO product 
+            (ProductName, CategoryID, PricePerKg, StockWeight, DateAdded, Status)
+            VALUES (?, ?, ?, ?, NOW(), 'Available')
+        ");
+        $stmt->execute([
+            $_POST['name'],
+            $_POST['category'],
+            $_POST['price'],
+            $_POST['stock']
+        ]);
+    }
+
+
+    if (isset($_GET['delete'])) {
+        $stmt = $conn->prepare("DELETE FROM product WHERE ProductID = ?");
+        $stmt->execute([$_GET['delete']]);
+    }
+
+
     $stmt = $conn->prepare("
-        INSERT INTO product 
-        (ProductName, CategoryID, PricePerKg, StockWeight, DateAdded, Status)
-        VALUES (?, ?, ?, ?, NOW(), 'Available')
+        SELECT p.*, c.CategoryName 
+        FROM product p
+        JOIN category c ON p.CategoryID = c.CategoryID
     ");
-    $stmt->execute([
-        $_POST['name'],
-        $_POST['category'],
-        $_POST['price'],
-        $_POST['stock']
-    ]);
-}
+    $stmt->execute();
+    $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-/* DELETE PRODUCT */
-if (isset($_GET['delete'])) {
-    $stmt = $conn->prepare("DELETE FROM product WHERE ProductID = ?");
-    $stmt->execute([$_GET['delete']]);
-}
+    $catStmt = $conn->prepare("SELECT * FROM category");
+    $catStmt->execute();
+    $categories = $catStmt->fetchAll(PDO::FETCH_ASSOC);
+    ?>
 
-/* FETCH */
-$stmt = $conn->prepare("
-    SELECT p.*, c.CategoryName 
-    FROM product p
-    JOIN category c ON p.CategoryID = c.CategoryID
-");
-$stmt->execute();
-$products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    <style>
+    body { font-family: Arial; }
 
-$catStmt = $conn->prepare("SELECT * FROM category");
-$catStmt->execute();
-$categories = $catStmt->fetchAll(PDO::FETCH_ASSOC);
-?>
+    .container {
+        padding: 20px;
+    }
 
-<style>
-body { font-family: Arial; }
+    .header {
+        display:flex;
+        justify-content: space-between;
+        align-items:center;
+    }
 
-.container {
-    padding: 20px;
-}
+    .btn {
+        background:#D53E0F;
+        color:white;
+        padding:10px 15px;
+        border:none;
+        border-radius:8px;
+        cursor:pointer;
+    }
 
-.header {
-    display:flex;
-    justify-content: space-between;
-    align-items:center;
-}
+    .btn:hover {
+        background:#b7320c;
+    }
 
-.btn {
-    background:#D53E0F;
-    color:white;
-    padding:10px 15px;
-    border:none;
-    border-radius:8px;
-    cursor:pointer;
-}
 
-.btn:hover {
-    background:#b7320c;
-}
+    table {
+        width:100%;
+        border-collapse:collapse;
+        margin-top:20px;
+        background:white;
+        border-radius:10px;
+        overflow:hidden;
+    }
 
-/* TABLE */
-table {
-    width:100%;
-    border-collapse:collapse;
-    margin-top:20px;
-    background:white;
-    border-radius:10px;
-    overflow:hidden;
-}
+    th {
+        background:#091413;
+        color:white;
+        padding:10px;
+    }
 
-th {
-    background:#091413;
-    color:white;
-    padding:10px;
-}
+    td {
+        padding:10px;
+        text-align:center;
+        border-bottom:1px solid #eee;
+    }
 
-td {
-    padding:10px;
-    text-align:center;
-    border-bottom:1px solid #eee;
-}
 
-/* MODAL */
-.modal {
-    display:none;
-    position:fixed;
-    top:0;
-    left:0;
-    width:100%;
-    height:100%;
-    background:rgba(0,0,0,0.5);
-}
+    .modal {
+        display:none;
+        position:fixed;
+        top:0;
+        left:0;
+        width:100%;
+        height:100%;
+        background:rgba(0,0,0,0.5);
+    }
 
-.modal-content {
-    background:white;
-    width:400px;
-    margin:10% auto;
-    padding:20px;
-    border-radius:10px;
-}
+    .modal-content {
+        background:white;
+        width:400px;
+        margin:10% auto;
+        padding:20px;
+        border-radius:10px;
+    }
 
-.modal input, .modal select {
-    width:100%;
-    margin:5px 0;
-    padding:10px;
-}
-.modal input{
-    width:94%;
-}
+    .modal input, .modal select {
+        width:100%;
+        margin:5px 0;
+        padding:10px;
+    }
+    .modal input{
+        width:94%;
+    }
 
-.close {
-    float:right;
-    cursor:pointer;
-    font-size:20px;
-}
+    .close {
+        float:right;
+        cursor:pointer;
+        font-size:20px;
+    }
+    
 </style>
 
 <div class="container">
@@ -128,8 +129,7 @@ td {
         <h2> Inventory</h2>
         <button class="btn" onclick="openModal()">+ Add Product</button>
     </div>
-
-    <!-- TABLE -->
+    
     <table>
         <tr>
             <th>Name</th>
@@ -158,7 +158,7 @@ td {
 
 </div>
 
-<!-- ADD MODAL -->
+
 <div id="addModal" class="modal">
     <div class="modal-content">
         <span class="close" onclick="closeModal()">&times;</span>
@@ -185,18 +185,18 @@ td {
 </div>
 
 <script>
-function openModal() {
-    document.getElementById("addModal").style.display = "block";
-}
-
-function closeModal() {
-    document.getElementById("addModal").style.display = "none";
-}
-
-window.onclick = function(e) {
-    let modal = document.getElementById("addModal");
-    if (e.target == modal) {
-        modal.style.display = "none";
+    function openModal() {
+        document.getElementById("addModal").style.display = "block";
     }
-}
+
+    function closeModal() {
+        document.getElementById("addModal").style.display = "none";
+    }
+
+    window.onclick = function(e) {
+        let modal = document.getElementById("addModal");
+        if (e.target == modal) {
+            modal.style.display = "none";
+        }
+    }
 </script>

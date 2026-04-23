@@ -1,10 +1,12 @@
 <?php 
+
     session_start();
     $errors = $_SESSION['errors'] ?? [];
     $old_input = $_SESSION['old_val'] ?? '';
     $pass_old = $_SESSION['pass_old'] ?? '';
 
     unset($_SESSION['errors'], $_SESSION['old_val'], $_SESSION['pass_old']);
+
 ?>
 
 <!DOCTYPE html>
@@ -14,7 +16,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Document</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    <style>
+    <link rel="stylesheet" href="../css/login_style.css">
+    <!-- <style>
         
     * {
         box-sizing: border-box;
@@ -124,7 +127,7 @@
     }
 
 
-    </style>
+    </style> -->
 </head>
 <body>
 <!-- 
@@ -165,7 +168,8 @@
         <?php endif;?>
         <button type="submit">Sign in</button>
     </form>
-        <footer>&COPY;JAQ Meatshop</footer>
+    <footer>&COPY;JAQ Meatshop</footer>
+    
 </div>
 
 <script>
