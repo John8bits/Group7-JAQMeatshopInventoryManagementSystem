@@ -17,7 +17,7 @@
     <title>Document</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="../css/login_style.css">
-    <!-- <style>
+    <style>
         
     * {
         box-sizing: border-box;
@@ -125,11 +125,10 @@
         margin:1% 0 0 5%;
         font-size: 10px;
     }
-
-
-    </style> -->
+    </style>
 </head>
 <body>
+    
 <!-- 
 <img src="bg_login.png" style="width:500px; "> -->
 
