@@ -29,7 +29,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background-image: url('bg_login.png');
+        background-image: url('login.png');
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;

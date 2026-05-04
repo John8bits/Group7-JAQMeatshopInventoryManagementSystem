@@ -7,7 +7,7 @@
  body {
     margin: 0;
     font-family: Arial;
-    background-image: url('../Authentication/bg_login.png');
+    background-image: url('../Authentication/dashboard.png');
     background-size: cover;        
     background-position: center;   
     background-repeat: no-repeat;  
@@ -25,7 +25,7 @@ body::before {
 h1 {
     text-align: center;
     margin-top: 25px;
-    color: #333;
+    color: #fdfdfd;
 }
 
 /* Container */
@@ -134,5 +134,6 @@ button:hover {
     .logout_cashier {
         top: 10px;
         right: 10px;
+        
     }
 }

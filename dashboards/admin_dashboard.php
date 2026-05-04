@@ -15,7 +15,7 @@ $page = isset($_GET['page']) ? $_GET['page'] : 'home';
 <head>
 <meta charset="UTF-8">
 <title>Admin Dashboard</title>
-<link rel="stylesheet" href="../css/admin_dashboard.css">
+<link rel="stylesheet" href="../css/admin_style.css">
 
 
 

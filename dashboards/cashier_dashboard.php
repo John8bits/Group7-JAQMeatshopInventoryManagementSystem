@@ -14,7 +14,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $product = $_POST['product'];
     $weight = floatval($_POST['weight']);
 
-    // Prices
+    
     $prices = [
         "Beef" => 350,
         "Pork" => 280,
@@ -41,7 +41,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <head>
     <meta charset="UTF-8">
     <title>Cashier Dashboard</title>
-    <link rel="stylesheet" href="../css/cashier_dashboard.css">
+    <link rel="stylesheet" href="../css/cashier_style.css">
 
 </head>
 

@@ -46,7 +46,7 @@ body { font-family: Arial; }
 }
 
 h2{
-    color:black;
+    color:white;
 }
 
 .header {
