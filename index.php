@@ -45,7 +45,7 @@
         /* height:50%; */
         box-shadow: 0 1px 5px rgba(236, 233, 233, 0.94); 
         text-align: center;
-        /* border:4px solid black; */
+        border:1px solid black;
     }
 
     h2 {

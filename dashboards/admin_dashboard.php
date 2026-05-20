@@ -14,6 +14,7 @@ $pages = [
     'reports'   => ['title' => 'Sales Report',     'sub' => 'Daily, weekly, monthly & yearly sales analytics'],
     'alerts'    => ['title' => 'Alerts',           'sub' => 'Low stock & expiry notifications'],
     'cashier'   => ['title' => 'Manage Cashier',   'sub' => 'Cashier accounts & access'],
+    'backup'    => ['title' => 'Database Backup',  'sub' => 'Create, recover, and delete database backups'],
 ];
 $current = $pages[$page] ?? $pages['home'];
 
@@ -133,6 +134,9 @@ $todaySales = (float)($salesStmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
     <a href="?page=cashier" class="nav-link <?= $page==='cashier' ? 'active' : '' ?>">
       <i class="ti ti-users"></i> Manage Cashier
     </a>
+    <a href="?page=backup" class="nav-link <?= $page==='backup' ? 'active' : '' ?>">
+      <i class="ti ti-database-export"></i> Database Backup
+    </a>
   </div>
  
   <div class="sidebar-footer">
@@ -243,6 +247,7 @@ $todaySales = (float)($salesStmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
             case 'reports':   include '../Admin_sidebar_function/reports.php';   break;
             case 'alerts':    include '../Admin_sidebar_function/alert.php';      break;
             case 'cashier':   include '../Admin_sidebar_function/manage_cashier.php'; break;
+            case 'backup':    include '../Admin_sidebar_function/database_backup.php'; break;
         }
         ?>
       </div>

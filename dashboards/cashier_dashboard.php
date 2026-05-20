@@ -29,11 +29,54 @@ if (!$imageColumnStmt->fetch(PDO::FETCH_ASSOC)) {
     $conn->exec("ALTER TABLE product ADD ProductImage VARCHAR(255) NULL");
 }
 
-function productIcon($name) {
-    $lower = strtolower($name);
+$partColumnStmt = $conn->prepare("SHOW COLUMNS FROM product LIKE 'ProductPart'");
+$partColumnStmt->execute();
+if (!$partColumnStmt->fetch(PDO::FETCH_ASSOC)) {
+    $conn->exec("ALTER TABLE product ADD ProductPart VARCHAR(100) NULL AFTER ProductName");
+}
+
+$typeColumnStmt = $conn->prepare("SHOW COLUMNS FROM product LIKE 'ProductType'");
+$typeColumnStmt->execute();
+if (!$typeColumnStmt->fetch(PDO::FETCH_ASSOC)) {
+    $conn->exec("ALTER TABLE product ADD ProductType VARCHAR(50) NULL AFTER ProductPart");
+}
+
+function productSearchText($product) {
+    return strtolower(implode(' ', [
+        $product['ProductType'] ?? '',
+        $product['CategoryName'] ?? '',
+        $product['ProductName'] ?? '',
+        $product['ProductPart'] ?? '',
+    ]));
+}
+
+function productDisplayName($product) {
+    $category = trim($product['CategoryName'] ?? '');
+    $part = trim($product['ProductPart'] ?? '');
+    $name = trim($product['ProductName'] ?? '');
+    $type = trim($product['ProductType'] ?? '');
+
+    if ($type === 'Processed Foods' || $category === 'Processed Foods') {
+        return $part !== '' ? $part : $name;
+    }
+
+    if ($category !== '' && $part !== '') {
+        return $category . ' - ' . $part;
+    }
+
+    if ($part !== '') {
+        return $part;
+    }
+
+    return $name;
+}
+
+function productIcon($product) {
+    $lower = productSearchText($product);
     if (strpos($lower, 'beef') !== false) return '🥩';
     if (strpos($lower, 'pork') !== false) return '🍖';
     if (strpos($lower, 'chicken') !== false) return '🍗';
+    if (strpos($lower, 'processed') !== false || strpos($lower, 'hotdog') !== false || strpos($lower, 'longganisa') !== false || strpos($lower, 'tocino') !== false || strpos($lower, 'bacon') !== false || strpos($lower, 'ham') !== false) return '🛒';
     return '🥩';
 }
 
@@ -42,27 +85,28 @@ function productImage($product) {
         return '../' . $product['ProductImage'];
     }
 
-    $name = $product['ProductName'];
-    $lower = strtolower($name);
+    $lower = productSearchText($product);
     if (strpos($lower, 'beef') !== false) return '../uploads/products/beef.jpg';
     if (strpos($lower, 'pork') !== false) return '../uploads/products/pork.jpg';
     if (strpos($lower, 'chicken') !== false) return '../uploads/products/chicken.jpg';
     return '../uploads/products/pork.jpg';
 }
 
-function productClass($name) {
-    $lower = strtolower($name);
+function productClass($product) {
+    $lower = productSearchText($product);
     if (strpos($lower, 'beef') !== false) return 'beef';
     if (strpos($lower, 'pork') !== false) return 'pork';
     if (strpos($lower, 'chicken') !== false) return 'chicken';
+    if (strpos($lower, 'processed') !== false) return 'processed';
     return 'pork';
 }
 
 $productStmt = $conn->prepare("
-    SELECT ProductID, ProductName, PricePerKg, StockWeight, ProductImage
-    FROM product
-    WHERE Status = 'Available'
-    ORDER BY ProductName
+    SELECT p.ProductID, p.ProductName, p.ProductPart, p.ProductType, p.PricePerKg, p.StockWeight, p.ProductImage, c.CategoryName
+    FROM product p
+    JOIN category c ON p.CategoryID = c.CategoryID
+    WHERE p.Status = 'Available'
+    ORDER BY COALESCE(p.ProductType, 'Meat'), c.CategoryName, p.ProductPart, p.ProductName
 ");
 $productStmt->execute();
 $products = $productStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -84,10 +128,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action'])) {
         $weight  = floatval($_POST['weight']);
         if (isset($productsById[$productId]) && $weight > 0) {
             $product = $productsById[$productId];
+            $displayName = productDisplayName($product);
             $price = (float)$product['PricePerKg'];
             $availableStock = (float)$product['StockWeight'];
             if ($availableStock <= 0) {
-                $_SESSION['cart_error'] = $product['ProductName'] . ' is out of stock.';
+                $_SESSION['cart_error'] = $displayName . ' is out of stock.';
                 header("Location: " . $_SERVER['PHP_SELF']);
                 exit;
             }
@@ -98,7 +143,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action'])) {
                 }
             }
             if (($currentCartWeight + $weight) > $availableStock) {
-                $_SESSION['cart_error'] = 'Not enough stock for ' . $product['ProductName'] . '.';
+                $_SESSION['cart_error'] = 'Not enough stock for ' . $displayName . '.';
                 header("Location: " . $_SERVER['PHP_SELF']);
                 exit;
             }
@@ -114,8 +159,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action'])) {
             if (!$found) {
                 $_SESSION['cart'][] = [
                     'id'    => $productId,
-                    'name'  => $product['ProductName'],
-                    'icon'  => productIcon($product['ProductName']),
+                    'name'  => $displayName,
+                    'icon'  => productIcon($product),
                     'price' => $price,
                     'weight'=> $weight,
                     'total' => round($price * $weight, 2),
@@ -219,61 +264,72 @@ unset($_SESSION['cart_error']);
       </div>
     </div>
  
-    <div class="section-label">Select Product</div>
-    <div class="products-grid">
-      <?php if (empty($products)): ?>
-        <div class="empty-cart" style="grid-column:1/-1">
-          <div style="font-size:0.9rem;font-style:italic">No available products.</div>
+    <div class="select-product-panel">
+      <div class="section-label">Select Product</div>
+      <div class="products-scroll">
+        <div class="products-grid">
+          <?php if (empty($products)): ?>
+            <div class="empty-cart" style="grid-column:1/-1">
+              <div style="font-size:0.9rem;font-style:italic">No available products.</div>
+            </div>
+          <?php else: ?>
+            <?php foreach ($products as $index => $product): ?>
+              <?php $isOutOfStock = (float)$product['StockWeight'] <= 0; ?>
+              <?php $isProcessed = ($product['ProductType'] ?? '') === 'Processed Foods' || $product['CategoryName'] === 'Processed Foods'; ?>
+              <div
+                class="product-card <?= productClass($product) ?> <?= $isOutOfStock ? 'out-of-stock' : '' ?>"
+                <?php if (!$isOutOfStock): ?>
+                  onclick="pickProduct('<?= htmlspecialchars($product['ProductID']) ?>')"
+                <?php endif; ?>>
+                <div class="product-tag <?= $isOutOfStock ? 'stock-out' : '' ?>">
+                  <?= $isOutOfStock ? 'Out of stock' : 'Available' ?>
+                </div>
+                <img src="<?= htmlspecialchars(productImage($product)) ?>" alt="<?= htmlspecialchars($product['ProductName']) ?>" class="product-img">
+                <div class="product-category"><?= htmlspecialchars($isProcessed ? 'Processed Foods' : $product['CategoryName']) ?></div>
+                <div class="product-name"><?= htmlspecialchars($product['ProductPart'] ?: $product['ProductName']) ?></div>
+                <?php if (!$isProcessed && !empty($product['ProductPart']) && $product['ProductName'] !== $product['ProductPart']): ?>
+                  <div class="product-base-name"><?= htmlspecialchars($product['ProductName']) ?></div>
+                <?php endif; ?>
+                <div class="product-price">₱<strong><?= number_format((float)$product['PricePerKg'], 2) ?></strong>/kg</div>
+                <div class="product-stock <?= $isOutOfStock ? 'stock-empty' : '' ?>">
+                  <?= $isOutOfStock ? 'Availability: ' : 'Available: ' ?>
+                  <strong><?= $isOutOfStock ? 'Out of stock' : number_format((float)$product['StockWeight'], 2) . ' kg' ?></strong>
+                </div>
+              </div>
+            <?php endforeach; ?>
+          <?php endif; ?>
         </div>
-      <?php else: ?>
-        <?php foreach ($products as $index => $product): ?>
-          <?php $isOutOfStock = (float)$product['StockWeight'] <= 0; ?>
-          <div
-            class="product-card <?= productClass($product['ProductName']) ?> <?= $isOutOfStock ? 'out-of-stock' : '' ?>"
-            <?php if (!$isOutOfStock): ?>
-              onclick="pickProduct('<?= htmlspecialchars($product['ProductID']) ?>')"
-            <?php endif; ?>>
-            <div class="product-tag <?= $isOutOfStock ? 'stock-out' : '' ?>">
-              <?= $isOutOfStock ? 'Out of stock' : 'Available' ?>
-            </div>
-            <img src="<?= htmlspecialchars(productImage($product)) ?>" alt="<?= htmlspecialchars($product['ProductName']) ?>" class="product-img">
-            <div class="product-name"><?= htmlspecialchars($product['ProductName']) ?></div>
-            <div class="product-price">₱<strong><?= number_format((float)$product['PricePerKg'], 2) ?></strong>/kg</div>
-            <div class="product-stock <?= $isOutOfStock ? 'stock-empty' : '' ?>">
-              <?= $isOutOfStock ? 'Availability: ' : 'Available: ' ?>
-              <strong><?= $isOutOfStock ? 'Out of stock' : number_format((float)$product['StockWeight'], 2) . ' kg' ?></strong>
-            </div>
-          </div>
-        <?php endforeach; ?>
-      <?php endif; ?>
+      </div>
     </div>
  
-    <div class="section-label">Add to Cart</div>
-    <div class="add-form">
-      <form method="POST">
-        <input type="hidden" name="action" value="add">
-        <div class="form-row">
-          <div class="field-group">
-            <div class="field-label">Weight (kg)</div>
-            <input class="weight-input" type="number" name="weight" id="weightInput" min="0.01" step="0.01" required>
+    <div class="add-cart-panel">
+      <div class="section-label">Add to Cart</div>
+      <div class="add-form">
+        <form method="POST">
+          <input type="hidden" name="action" value="add">
+          <div class="form-row">
+            <div class="field-group">
+              <div class="field-label">Weight (kg)</div>
+              <input class="weight-input" type="number" name="weight" id="weightInput" min="0.01" step="0.01" required>
+            </div>
+            <div class="field-group">
+              <div class="field-label">Product</div>
+              <select class="product-select" name="product" id="productSelect" required>
+                <?php foreach ($products as $product): ?>
+                  <?php $isOutOfStock = (float)$product['StockWeight'] <= 0; ?>
+                  <option value="<?= htmlspecialchars($product['ProductID']) ?>" <?= $isOutOfStock ? 'disabled' : '' ?>>
+                    <?= productIcon($product) ?> <?= htmlspecialchars(productDisplayName($product)) ?> — ₱<?= number_format((float)$product['PricePerKg'], 2) ?>/kg — <?= $isOutOfStock ? 'Out of stock' : 'Stock: ' . number_format((float)$product['StockWeight'], 2) . ' kg' ?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="field-group">
+              <div class="field-label">&nbsp;</div>
+              <button type="submit" class="btn-add" <?= $sellableProductCount === 0 ? 'disabled' : '' ?>>+ Add</button>
+            </div>
           </div>
-          <div class="field-group">
-            <div class="field-label">Product</div>
-            <select class="product-select" name="product" id="productSelect" required>
-              <?php foreach ($products as $product): ?>
-                <?php $isOutOfStock = (float)$product['StockWeight'] <= 0; ?>
-                <option value="<?= htmlspecialchars($product['ProductID']) ?>" <?= $isOutOfStock ? 'disabled' : '' ?>>
-                  <?= productIcon($product['ProductName']) ?> <?= htmlspecialchars($product['ProductName']) ?> — ₱<?= number_format((float)$product['PricePerKg'], 2) ?>/kg — <?= $isOutOfStock ? 'Out of stock' : 'Stock: ' . number_format((float)$product['StockWeight'], 2) . ' kg' ?>
-                </option>
-              <?php endforeach; ?>
-            </select>
-          </div>
-          <div class="field-group">
-            <div class="field-label">&nbsp;</div>
-            <button type="submit" class="btn-add" <?= $sellableProductCount === 0 ? 'disabled' : '' ?>>+ Add</button>
-          </div>
-        </div>
-      </form>
+        </form>
+      </div>
     </div>
   </div>
  
@@ -376,7 +432,7 @@ unset($_SESSION['cart_error']);
 </div>
 
 <?php if ($lastReceipt): ?>
-<div id="printReceipt" class="print-receipt">
+<div id="printReceipt" class="print-receipt" style="display:none" aria-hidden="true">
   <div class="print-shop">JAQ Meatshop</div>
   <div class="print-sub">Official Receipt</div>
   <div class="print-meta">Cashier: <?= htmlspecialchars($lastReceipt['cashier']) ?></div>
@@ -474,11 +530,16 @@ if (typeof Swal !== 'undefined') {
     cancelButtonColor: '#6B4C3B'
   }).then(function(result) {
     if (result.isConfirmed) {
+      document.body.classList.add('receipt-printing');
       window.print();
     }
   });
 }
 <?php endif; ?>
+
+window.addEventListener('afterprint', function() {
+  document.body.classList.remove('receipt-printing');
+});
 </script>
 </body>
 </html>

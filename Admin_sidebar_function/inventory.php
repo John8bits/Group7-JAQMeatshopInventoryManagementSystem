@@ -10,6 +10,44 @@ if (!$imageColumnStmt->fetch(PDO::FETCH_ASSOC)) {
     $conn->exec("ALTER TABLE product ADD ProductImage VARCHAR(255) NULL");
 }
 
+$partColumnStmt = $conn->prepare("SHOW COLUMNS FROM product LIKE 'ProductPart'");
+$partColumnStmt->execute();
+if (!$partColumnStmt->fetch(PDO::FETCH_ASSOC)) {
+    $conn->exec("ALTER TABLE product ADD ProductPart VARCHAR(100) NULL AFTER ProductName");
+}
+
+$typeColumnStmt = $conn->prepare("SHOW COLUMNS FROM product LIKE 'ProductType'");
+$typeColumnStmt->execute();
+if (!$typeColumnStmt->fetch(PDO::FETCH_ASSOC)) {
+    $conn->exec("ALTER TABLE product ADD ProductType VARCHAR(50) NULL AFTER ProductPart");
+}
+
+$meatParts = [
+    'Pork' => ['Shoulder', 'Hind Leg', 'Pork Belly', 'Loin', 'Ribs', 'Leg', 'Pig Feet', 'Bony Cuts', 'Head Parts', 'Organs'],
+    'Beef' => ['Chuck', 'Brisket', 'Rib', 'Short Ribs', 'Loin', 'Sirloin', 'Tenderloin', 'Round', 'Shank', 'Flank'],
+    'Chicken' => ['Whole Chicken', 'Breast', 'Thigh', 'Drumstick', 'Wings', 'Back', 'Neck', 'Feet', 'Liver', 'Egg'],
+];
+$processedFoods = ['Hotdog', 'Longganisa', 'Tocino', 'Bacon', 'Ham'];
+$requiredCategories = array_merge(array_keys($meatParts), ['Processed Foods']);
+
+$existingCategoryStmt = $conn->prepare("SELECT CategoryID, CategoryName FROM category");
+$existingCategoryStmt->execute();
+$categoryMap = [];
+foreach ($existingCategoryStmt->fetchAll(PDO::FETCH_ASSOC) as $categoryRow) {
+    $categoryMap[strtolower($categoryRow['CategoryName'])] = $categoryRow;
+}
+
+$insertCategoryStmt = $conn->prepare("INSERT INTO category (CategoryName) VALUES (?)");
+foreach ($requiredCategories as $categoryName) {
+    if (!isset($categoryMap[strtolower($categoryName)])) {
+        $insertCategoryStmt->execute([$categoryName]);
+        $categoryMap[strtolower($categoryName)] = [
+            'CategoryID' => $conn->lastInsertId(),
+            'CategoryName' => $categoryName,
+        ];
+    }
+}
+
 function uploadProductImage($fieldName) {
     if (empty($_FILES[$fieldName]['name']) || $_FILES[$fieldName]['error'] === UPLOAD_ERR_NO_FILE) {
         return null;
@@ -47,13 +85,22 @@ function uploadProductImage($fieldName) {
 
 if (isset($_POST['add'])) {
     $productImage = uploadProductImage('image');
+    $productName = trim($_POST['name'] ?? '');
+    $productPart = trim($_POST['part'] ?? '');
+    $productType = ($_POST['product_type'] ?? '') === 'Processed Foods' ? 'Processed Foods' : 'Meat';
+    if ($productName === '') {
+        $productName = $productPart;
+    }
+
     $stmt = $conn->prepare("
         INSERT INTO product 
-        (ProductName, CategoryID, PricePerKg, StockWeight, ProductImage, DateAdded, Status)
-        VALUES (?, ?, ?, ?, ?, NOW(), 'Available')
+        (ProductName, ProductPart, ProductType, CategoryID, PricePerKg, StockWeight, ProductImage, DateAdded, Status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), 'Available')
     ");
     $stmt->execute([
-        $_POST['name'],
+        $productName,
+        $productPart,
+        $productType,
         $_POST['category'],
         $_POST['price'],
         $_POST['stock'],
@@ -63,8 +110,17 @@ if (isset($_POST['add'])) {
 
 if (isset($_POST['update'])) {
     $productImage = uploadProductImage('image');
+    $productName = trim($_POST['name'] ?? '');
+    $productPart = trim($_POST['part'] ?? '');
+    $productType = ($_POST['product_type'] ?? '') === 'Processed Foods' ? 'Processed Foods' : 'Meat';
+    if ($productName === '') {
+        $productName = $productPart;
+    }
+
     $params = [
-        $_POST['name'],
+        $productName,
+        $productPart,
+        $productType,
         $_POST['category'],
         $_POST['price'],
         $_POST['stock'],
@@ -80,7 +136,7 @@ if (isset($_POST['update'])) {
 
     $stmt = $conn->prepare("
         UPDATE product
-        SET ProductName = ?, CategoryID = ?, PricePerKg = ?, StockWeight = ?{$imageSql}
+        SET ProductName = ?, ProductPart = ?, ProductType = ?, CategoryID = ?, PricePerKg = ?, StockWeight = ?{$imageSql}
         WHERE ProductID = ?
     ");
     $stmt->execute($params);
@@ -107,13 +163,13 @@ $stmt = $conn->prepare("
     FROM product p
     JOIN category c ON p.CategoryID = c.CategoryID
     WHERE p.Status = 'Available'
-    ORDER BY p.ProductName
+    ORDER BY COALESCE(p.ProductType, 'Meat'), c.CategoryName, p.ProductPart, p.ProductName
 ");
 
 $stmt->execute();
 $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$catStmt = $conn->prepare("SELECT * FROM category");
+$catStmt = $conn->prepare("SELECT * FROM category WHERE CategoryName IN ('Beef', 'Pork', 'Chicken', 'Processed Foods') ORDER BY FIELD(CategoryName, 'Pork', 'Beef', 'Chicken', 'Processed Foods')");
 $catStmt->execute();
 $categories = $catStmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -318,7 +374,9 @@ td {
         <tr>
             <th>Name</th>
             <th>Photo</th>
+            <th>Type</th>
             <th>Category</th>
+            <th>Part</th>
             <th>Price</th>
             <th>Stock</th>
             <th>Status</th>
@@ -326,6 +384,7 @@ td {
         </tr>
 
         <?php foreach ($products as $row): ?>
+        <?php $rowType = $row['ProductType'] ?: ($row['CategoryName'] === 'Processed Foods' ? 'Processed Foods' : 'Meat'); ?>
         <tr>
             <td><?= htmlspecialchars($row['ProductName']) ?></td>
             <td>
@@ -335,7 +394,9 @@ td {
                     No photo
                 <?php endif; ?>
             </td>
+            <td><?= htmlspecialchars($rowType) ?></td>
             <td><?= htmlspecialchars($row['CategoryName']) ?></td>
+            <td><?= htmlspecialchars($row['ProductPart'] ?? '') ?></td>
             <td>₱<?= number_format((float)$row['PricePerKg'], 2) ?></td>
             <td><?= number_format((float)$row['StockWeight'], 2) ?> kg</td>
             <td><?= htmlspecialchars($row['Status']) ?></td>
@@ -345,6 +406,8 @@ td {
                    class="edit"
                    data-id="<?= htmlspecialchars($row['ProductID']) ?>"
                    data-name="<?= htmlspecialchars($row['ProductName']) ?>"
+                   data-part="<?= htmlspecialchars($row['ProductPart'] ?? '') ?>"
+                   data-type="<?= htmlspecialchars($rowType) ?>"
                    data-category="<?= htmlspecialchars($row['CategoryID']) ?>"
                    data-price="<?= htmlspecialchars($row['PricePerKg']) ?>"
                    data-stock="<?= htmlspecialchars($row['StockWeight']) ?>"
@@ -371,19 +434,39 @@ td {
         </div>
 
         <form class="modal-form" method="POST" enctype="multipart/form-data" onsubmit="return validateProductForm(this)">
-            <label>
-                Product Name
-                <input type="text" name="name" placeholder="Product Name" required>
-            </label>
+            <input type="hidden" name="name" class="product-name-input">
             <label>
                 Category
-                <select name="category" required>
+                <select name="product_type" class="product-type-select" required onchange="syncProductChoices(this.form)">
                     <option value="">Select Category</option>
+                    <option value="Meat">Meat</option>
+                    <option value="Processed Foods">Processed Foods</option>
+                </select>
+            </label>
+            <label class="animal-category-field">
+                Meat Type
+                <select name="category" class="animal-category-select" required onchange="syncProductChoices(this.form)">
+                    <option value="">Select Meat Type</option>
                     <?php foreach ($categories as $c): ?>
-                        <option value="<?= $c['CategoryID'] ?>">
-                            <?= $c['CategoryName'] ?>
-                        </option>
+                        <?php if ($c['CategoryName'] !== 'Processed Foods'): ?>
+                            <option value="<?= $c['CategoryID'] ?>" data-name="<?= htmlspecialchars($c['CategoryName']) ?>">
+                                <?= htmlspecialchars($c['CategoryName']) ?>
+                            </option>
+                        <?php endif; ?>
                     <?php endforeach; ?>
+                    <?php foreach ($categories as $c): ?>
+                        <?php if ($c['CategoryName'] === 'Processed Foods'): ?>
+                            <option value="<?= $c['CategoryID'] ?>" data-name="Processed Foods" data-processed="1" hidden>
+                                Processed Foods
+                            </option>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>
+                Product / Cut
+                <select name="part" class="part-select" required onchange="syncProductName(this.form)">
+                    <option value="">Select product</option>
                 </select>
             </label>
             <label>
@@ -415,19 +498,39 @@ td {
 
         <form class="modal-form" method="POST" enctype="multipart/form-data" onsubmit="return validateProductForm(this)">
             <input type="hidden" name="product_id" id="editProductId">
-            <label>
-                Product Name
-                <input type="text" name="name" id="editName" placeholder="Product Name" required>
-            </label>
+            <input type="hidden" name="name" id="editName" class="product-name-input">
             <label>
                 Category
-                <select name="category" id="editCategory" required>
+                <select name="product_type" id="editProductType" class="product-type-select" required onchange="syncProductChoices(this.form)">
                     <option value="">Select Category</option>
+                    <option value="Meat">Meat</option>
+                    <option value="Processed Foods">Processed Foods</option>
+                </select>
+            </label>
+            <label class="animal-category-field">
+                Meat Type
+                <select name="category" id="editCategory" class="animal-category-select" required onchange="syncProductChoices(this.form)">
+                    <option value="">Select Meat Type</option>
                     <?php foreach ($categories as $c): ?>
-                        <option value="<?= $c['CategoryID'] ?>">
-                            <?= $c['CategoryName'] ?>
-                        </option>
+                        <?php if ($c['CategoryName'] !== 'Processed Foods'): ?>
+                            <option value="<?= $c['CategoryID'] ?>" data-name="<?= htmlspecialchars($c['CategoryName']) ?>">
+                                <?= htmlspecialchars($c['CategoryName']) ?>
+                            </option>
+                        <?php endif; ?>
                     <?php endforeach; ?>
+                    <?php foreach ($categories as $c): ?>
+                        <?php if ($c['CategoryName'] === 'Processed Foods'): ?>
+                            <option value="<?= $c['CategoryID'] ?>" data-name="Processed Foods" data-processed="1" hidden>
+                                Processed Foods
+                            </option>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>
+                Product / Cut
+                <select name="part" id="editPart" class="part-select" required onchange="syncProductName(this.form)">
+                    <option value="">Select product</option>
                 </select>
             </label>
             <label>
@@ -451,18 +554,22 @@ td {
 </div>
 
 <script>
+const meatParts = <?= json_encode($meatParts) ?>;
+const processedFoods = <?= json_encode($processedFoods) ?>;
 
 function validateProductForm(form) {
     const price = parseFloat(form.querySelector('input[name="price"]').value);
     const stock = parseFloat(form.querySelector('input[name="stock"]').value);
-    const name = form.querySelector('input[name="name"]').value.trim();
+    syncProductName(form);
+    const type = form.querySelector('select[name="product_type"]').value;
     const category = form.querySelector('select[name="category"]').value;
+    const part = form.querySelector('select[name="part"]').value.trim();
 
-    if (!name || !category) {
+    if (!type || !category || !part) {
         if (typeof Swal !== 'undefined') {
             Swal.fire({
                 title: 'Missing information',
-                text: 'Please fill in product name and category.',
+                text: 'Please select category, meat type if needed, and product/cut.',
                 icon: 'warning',
                 confirmButtonColor: '#B85C38'
             });
@@ -485,8 +592,65 @@ function validateProductForm(form) {
     return true;
 }
 
+function getProcessedCategoryOption(form) {
+    return form.querySelector('select[name="category"] option[data-processed="1"]');
+}
+
+function syncProductName(form) {
+    const partSelect = form.querySelector('select[name="part"]');
+    const nameInput = form.querySelector('input[name="name"]');
+    const part = partSelect.value || '';
+
+    nameInput.value = part;
+}
+
+function setPartOptions(partSelect, parts, selectedPart = '') {
+    partSelect.innerHTML = '<option value="">Select product</option>';
+    parts.forEach(function(part) {
+        const option = document.createElement('option');
+        option.value = part;
+        option.textContent = part;
+        if (part === selectedPart) {
+            option.selected = true;
+        }
+        partSelect.appendChild(option);
+    });
+}
+
+function syncProductChoices(form, selectedPart = '') {
+    const typeSelect = form.querySelector('select[name="product_type"]');
+    const categorySelect = form.querySelector('select[name="category"]');
+    const partSelect = form.querySelector('select[name="part"]');
+    const animalField = form.querySelector('.animal-category-field');
+    const processedOption = getProcessedCategoryOption(form);
+    const type = typeSelect.value;
+
+    if (type === 'Processed Foods') {
+        if (processedOption) {
+            categorySelect.value = processedOption.value;
+        }
+        animalField.style.display = 'none';
+        categorySelect.required = false;
+        setPartOptions(partSelect, processedFoods, selectedPart);
+    } else {
+        animalField.style.display = '';
+        categorySelect.required = true;
+        if (categorySelect.selectedOptions[0]?.dataset.processed === '1') {
+            categorySelect.value = '';
+        }
+        const categoryName = categorySelect.selectedOptions[0]?.dataset.name || '';
+        setPartOptions(partSelect, meatParts[categoryName] || [], selectedPart);
+    }
+
+    syncProductName(form);
+}
+
 function openModal() {
-    document.getElementById('addModal').classList.add('open');
+    const modal = document.getElementById('addModal');
+    const form = modal.querySelector('form');
+    form.reset();
+    syncProductChoices(form);
+    modal.classList.add('open');
 }
 
 function closeModal() {
@@ -494,9 +658,13 @@ function closeModal() {
 }
 
 function openEditModal(button) {
+    const modal = document.getElementById('editModal');
+    const form = modal.querySelector('form');
     document.getElementById('editProductId').value = button.dataset.id;
     document.getElementById('editName').value = button.dataset.name;
+    document.getElementById('editProductType').value = button.dataset.type;
     document.getElementById('editCategory').value = button.dataset.category;
+    syncProductChoices(form, button.dataset.part);
     document.getElementById('editPrice').value = button.dataset.price;
     document.getElementById('editStock').value = button.dataset.stock;
     document.getElementById('editModal').classList.add('open');
@@ -541,5 +709,9 @@ if (deleteButtons.length) {
         });
     });
 }
+
+document.querySelectorAll('.modal-form').forEach(function(form) {
+    syncProductChoices(form);
+});
 
 </script>
