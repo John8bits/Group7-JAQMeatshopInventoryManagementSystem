@@ -133,7 +133,7 @@
 <div class ="container">
     
     <h2>LOGIN</h2>
-    <form method="POST" action="login_process.php">
+    <form method="POST" action="Authentication/login_process.php">
 
         <?php if (!empty($errors['invalid'])): ?>
             <div class="error"><?= $errors['invalid']; ?></div>

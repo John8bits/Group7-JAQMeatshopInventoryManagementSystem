@@ -2,7 +2,7 @@
 session_start();
  
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'cashier') {
-    header("Location: ../Authentication/login.php");
+    header("Location: ../index.php");
     exit;
 }
  
@@ -23,6 +23,12 @@ require_once "../DatabaseConnection/database.php";
 $db = new Database();
 $conn = $db->conn;
 
+$imageColumnStmt = $conn->prepare("SHOW COLUMNS FROM product LIKE 'ProductImage'");
+$imageColumnStmt->execute();
+if (!$imageColumnStmt->fetch(PDO::FETCH_ASSOC)) {
+    $conn->exec("ALTER TABLE product ADD ProductImage VARCHAR(255) NULL");
+}
+
 function productIcon($name) {
     $lower = strtolower($name);
     if (strpos($lower, 'beef') !== false) return '🥩';
@@ -31,12 +37,17 @@ function productIcon($name) {
     return '🥩';
 }
 
-function productImage($name) {
+function productImage($product) {
+    if (!empty($product['ProductImage'])) {
+        return '../' . $product['ProductImage'];
+    }
+
+    $name = $product['ProductName'];
     $lower = strtolower($name);
-    if (strpos($lower, 'beef') !== false) return 'beef.jpg';
-    if (strpos($lower, 'pork') !== false) return 'pork.jpg';
-    if (strpos($lower, 'chicken') !== false) return 'chicken.jpg';
-    return 'pork.jpg';
+    if (strpos($lower, 'beef') !== false) return '../uploads/products/beef.jpg';
+    if (strpos($lower, 'pork') !== false) return '../uploads/products/pork.jpg';
+    if (strpos($lower, 'chicken') !== false) return '../uploads/products/chicken.jpg';
+    return '../uploads/products/pork.jpg';
 }
 
 function productClass($name) {
@@ -48,7 +59,7 @@ function productClass($name) {
 }
 
 $productStmt = $conn->prepare("
-    SELECT ProductID, ProductName, PricePerKg, StockWeight
+    SELECT ProductID, ProductName, PricePerKg, StockWeight, ProductImage
     FROM product
     WHERE Status = 'Available' AND StockWeight > 0
     ORDER BY ProductName
@@ -201,7 +212,7 @@ $cart_count = count($cart);
             class="product-card <?= productClass($product['ProductName']) ?>"
             onclick="pickProduct('<?= htmlspecialchars($product['ProductID']) ?>')">
             <?php if ($index === 0): ?><div class="product-tag">Available</div><?php endif; ?>
-            <img src="<?= htmlspecialchars(productImage($product['ProductName'])) ?>" alt="<?= htmlspecialchars($product['ProductName']) ?>" class="product-img">
+            <img src="<?= htmlspecialchars(productImage($product)) ?>" alt="<?= htmlspecialchars($product['ProductName']) ?>" class="product-img">
             <div class="product-name"><?= htmlspecialchars($product['ProductName']) ?></div>
             <div class="product-price">₱<strong><?= number_format((float)$product['PricePerKg'], 2) ?></strong>/kg</div>
           </div>

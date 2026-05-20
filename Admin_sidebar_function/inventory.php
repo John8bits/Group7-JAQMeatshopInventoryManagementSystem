@@ -4,38 +4,102 @@ require_once "../DatabaseConnection/database.php";
 $db = new Database();
 $conn = $db->conn;
 
-if (isset($_POST['add'])) {
-    $stmt = $conn->prepare("
-        INSERT INTO product 
-        (ProductName, CategoryID, PricePerKg, StockWeight, DateAdded, Status)
-        VALUES (?, ?, ?, ?, NOW(), 'Available')
-    ");
-    $stmt->execute([
-        $_POST['name'],
-        $_POST['category'],
-        $_POST['price'],
-        $_POST['stock']
-    ]);
+$imageColumnStmt = $conn->prepare("SHOW COLUMNS FROM product LIKE 'ProductImage'");
+$imageColumnStmt->execute();
+if (!$imageColumnStmt->fetch(PDO::FETCH_ASSOC)) {
+    $conn->exec("ALTER TABLE product ADD ProductImage VARCHAR(255) NULL");
 }
 
-if (isset($_POST['update'])) {
+function uploadProductImage($fieldName) {
+    if (empty($_FILES[$fieldName]['name']) || $_FILES[$fieldName]['error'] === UPLOAD_ERR_NO_FILE) {
+        return null;
+    }
+
+    if ($_FILES[$fieldName]['error'] !== UPLOAD_ERR_OK) {
+        return null;
+    }
+
+    $allowedTypes = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+        'image/gif' => 'gif',
+    ];
+    $mimeType = mime_content_type($_FILES[$fieldName]['tmp_name']);
+    if (!isset($allowedTypes[$mimeType])) {
+        return null;
+    }
+
+    $uploadDir = __DIR__ . '/../uploads/products';
+    if (!is_dir($uploadDir)) {
+        mkdir($uploadDir, 0775, true);
+    }
+
+    $fileName = uniqid('product_', true) . '.' . $allowedTypes[$mimeType];
+    $targetPath = $uploadDir . '/' . $fileName;
+
+    if (!move_uploaded_file($_FILES[$fieldName]['tmp_name'], $targetPath)) {
+        return null;
+    }
+
+    return 'uploads/products/' . $fileName;
+}
+
+if (isset($_POST['add'])) {
+    $productImage = uploadProductImage('image');
     $stmt = $conn->prepare("
-        UPDATE product
-        SET ProductName = ?, CategoryID = ?, PricePerKg = ?, StockWeight = ?
-        WHERE ProductID = ?
+        INSERT INTO product 
+        (ProductName, CategoryID, PricePerKg, StockWeight, ProductImage, DateAdded, Status)
+        VALUES (?, ?, ?, ?, ?, NOW(), 'Available')
     ");
     $stmt->execute([
         $_POST['name'],
         $_POST['category'],
         $_POST['price'],
         $_POST['stock'],
-        $_POST['product_id']
+        $productImage
     ]);
 }
 
+if (isset($_POST['update'])) {
+    $productImage = uploadProductImage('image');
+    $params = [
+        $_POST['name'],
+        $_POST['category'],
+        $_POST['price'],
+        $_POST['stock'],
+    ];
+    $imageSql = '';
+
+    if ($productImage !== null) {
+        $imageSql = ', ProductImage = ?';
+        $params[] = $productImage;
+    }
+
+    $params[] = $_POST['product_id'];
+
+    $stmt = $conn->prepare("
+        UPDATE product
+        SET ProductName = ?, CategoryID = ?, PricePerKg = ?, StockWeight = ?{$imageSql}
+        WHERE ProductID = ?
+    ");
+    $stmt->execute($params);
+}
+
 if (isset($_GET['delete'])) {
-    $stmt = $conn->prepare("DELETE FROM product WHERE ProductID = ?");
-    $stmt->execute([$_GET['delete']]);
+    $productId = (int)$_GET['delete'];
+
+    $transactionStmt = $conn->prepare("SELECT COUNT(*) FROM transactions WHERE ProductID = ?");
+    $transactionStmt->execute([$productId]);
+    $transactionCount = (int)$transactionStmt->fetchColumn();
+
+    if ($transactionCount > 0) {
+        $stmt = $conn->prepare("UPDATE product SET Status = 'Unavailable' WHERE ProductID = ?");
+        $stmt->execute([$productId]);
+    } else {
+        $stmt = $conn->prepare("DELETE FROM product WHERE ProductID = ?");
+        $stmt->execute([$productId]);
+    }
 }
 
 $stmt = $conn->prepare("
@@ -167,6 +231,13 @@ td {
     background:#175640;
 }
 
+.product-thumb{
+    width:56px;
+    height:44px;
+    object-fit:cover;
+    border-radius:6px;
+}
+
 
 </style>
 
@@ -180,18 +251,28 @@ td {
     <table>
         <tr>
             <th>Name</th>
+            <th>Photo</th>
             <th>Category</th>
             <th>Price</th>
             <th>Stock</th>
+            <th>Status</th>
             <th>Action</th>
         </tr>
 
         <?php foreach ($products as $row): ?>
         <tr>
             <td><?= htmlspecialchars($row['ProductName']) ?></td>
+            <td>
+                <?php if (!empty($row['ProductImage'])): ?>
+                    <img class="product-thumb" src="../<?= htmlspecialchars($row['ProductImage']) ?>" alt="<?= htmlspecialchars($row['ProductName']) ?>">
+                <?php else: ?>
+                    No photo
+                <?php endif; ?>
+            </td>
             <td><?= htmlspecialchars($row['CategoryName']) ?></td>
             <td>₱<?= number_format((float)$row['PricePerKg'], 2) ?></td>
             <td><?= number_format((float)$row['StockWeight'], 2) ?> kg</td>
+            <td><?= htmlspecialchars($row['Status']) ?></td>
             <td>
                 <button
                    type="button"
@@ -221,7 +302,7 @@ td {
         <span class="close" onclick="closeModal()">&times;</span>
         <h3 style="color:black;">Add Product</h3>
 
-        <form method="POST">
+        <form method="POST" enctype="multipart/form-data">
             <input type="text" name="name" placeholder="Product Name" required>
 
             <select name="category" required>
@@ -235,6 +316,7 @@ td {
 
             <input type="number" name="price" placeholder="Price/kg" min="0" step="0.01" required>
             <input type="number" name="stock" placeholder="Stock (kg)" min="0" step="0.01" required>
+            <input type="file" name="image" accept="image/*">
 
             <button class="btn" name="add">Save</button>
         </form>
@@ -246,7 +328,7 @@ td {
         <span class="close" onclick="closeEditModal()">&times;</span>
         <h3 style="color:black;">Edit Product</h3>
 
-        <form method="POST">
+        <form method="POST" enctype="multipart/form-data">
             <input type="hidden" name="product_id" id="editProductId">
             <input type="text" name="name" id="editName" placeholder="Product Name" required>
 
@@ -261,6 +343,7 @@ td {
 
             <input type="number" name="price" id="editPrice" placeholder="Price/kg" min="0" step="0.01" required>
             <input type="number" name="stock" id="editStock" placeholder="Stock (kg)" min="0" step="0.01" required>
+            <input type="file" name="image" accept="image/*">
 
             <button class="btn" name="update">Update</button>
         </form>
