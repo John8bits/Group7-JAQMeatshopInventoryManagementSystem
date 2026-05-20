@@ -152,6 +152,18 @@ body {
     background: var(--meat-light)
 }
 
+.product-card.out-of-stock {
+    cursor: not-allowed;
+    opacity: 0.68;
+    filter: grayscale(0.25);
+}
+
+.product-card.out-of-stock:hover {
+    border-color: var(--border);
+    transform: none;
+    box-shadow: none
+}
+
 .product-icon {
     font-size: 2.2rem;
     margin-bottom: 0.6rem;
@@ -175,6 +187,26 @@ body {
     font-size: 1rem
 }
 
+.product-stock {
+    margin-top: 0.55rem;
+    padding: 6px 10px;
+    border-radius: 10px;
+    background: var(--success-bg);
+    color: var(--success);
+    font-family: sans-serif;
+    font-size: 0.76rem;
+    width: 100%;
+}
+
+.product-stock strong {
+    font-weight: 800;
+}
+
+.product-stock.stock-empty {
+    background: #FEF0EF;
+    color: #C0392B;
+}
+
 .product-tag {
     position: absolute;
     top: 10px;
@@ -186,6 +218,12 @@ body {
     border-radius: 10px;
     font-family: sans-serif;
     border: 1px solid var(--border)
+}
+
+.product-tag.stock-out {
+    background: #FEF0EF;
+    color: #C0392B;
+    border-color: #F5C0B8;
 }
 
 .add-form {
@@ -670,4 +708,59 @@ body {
     display: block;
     margin-bottom: 12px;
     transition: 0.3s ease;
+}
+
+.print-receipt {
+    display: none;
+}
+
+@media print {
+    body * {
+        visibility: hidden;
+    }
+
+    #printReceipt,
+    #printReceipt * {
+        visibility: visible;
+    }
+
+    #printReceipt {
+        display: block;
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        padding: 18px;
+        color: #111;
+        font-family: Arial, sans-serif;
+        font-size: 12px;
+    }
+
+    .print-shop {
+        font-size: 18px;
+        font-weight: 800;
+        text-align: center;
+    }
+
+    .print-sub,
+    .print-thanks {
+        text-align: center;
+        margin: 4px 0 10px;
+    }
+
+    .print-meta {
+        margin-bottom: 4px;
+    }
+
+    .print-line {
+        border-top: 1px dashed #111;
+        margin: 10px 0;
+    }
+
+    .print-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 6px;
+    }
 }

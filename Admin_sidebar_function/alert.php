@@ -7,7 +7,8 @@ $conn = $db->conn;
 $stmt = $conn->prepare("
     SELECT ProductName, StockWeight 
     FROM product 
-    WHERE StockWeight < 5
+    WHERE Status = 'Available' AND StockWeight < 5
+    ORDER BY ProductName
 ");
 $stmt->execute();
 $alerts = $stmt->fetchAll(PDO::FETCH_ASSOC);

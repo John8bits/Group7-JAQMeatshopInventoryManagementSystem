@@ -106,6 +106,8 @@ $stmt = $conn->prepare("
     SELECT p.*, c.CategoryName 
     FROM product p
     JOIN category c ON p.CategoryID = c.CategoryID
+    WHERE p.Status = 'Available'
+    ORDER BY p.ProductName
 ");
 
 $stmt->execute();
@@ -172,36 +174,100 @@ td {
 
 
 .modal {
-    display:none;
-    position:fixed;
-    top:0;
-    left:0;
-    width:100%;
-    height:100%;
-    background:rgba(0,0,0,0.5);
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(9, 20, 19, 0.55);
+    z-index: 100;
+    padding: 24px;
+}
+
+.modal.open {
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .modal-content {
-    background:white;
-    width:400px;
-    margin:10% auto;
-    padding:20px;
-    border-radius:10px;
+    width: min(460px, 100%);
+    background: white;
+    border-radius: 12px;
+    padding: 22px;
+    box-shadow: 0 18px 45px rgba(0,0,0,0.18);
 }
 
-.modal input, .modal select {
-    width:94%;
-    margin:5px 0;
-    padding:10px;
+.modal-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
 }
-.modal input{
-    width:94%;
+
+.modal-title-row h3 {
+    color: #1A0F0A;
+    margin: 0;
+}
+
+.modal-close {
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-radius: 8px;
+    background: #F5E6DF;
+    color: #7A3520;
+    cursor: pointer;
+    font-size: 22px;
+    line-height: 1;
+}
+
+.modal-form {
+    display: grid;
+    gap: 12px;
+}
+
+.modal-form label {
+    display: grid;
+    gap: 6px;
+    color: #6B4C3B;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.modal-form input,
+.modal-form select {
+    width: 100%;
+    border: 1px solid #E8D5C8;
+    border-radius: 8px;
+    padding: 11px 12px;
+    font-size: 14px;
+    color: #1A0F0A;
+}
+
+.modal-form input:focus,
+.modal-form select:focus {
+    outline: none;
+    border-color: #B85C38;
+    box-shadow: 0 0 0 3px rgba(184, 92, 56, 0.14);
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 6px;
+}
+
+.btn-secondary {
+    background: #F5E6DF;
+    color: #7A3520;
+}
+
+.btn-secondary:hover {
+    background: #E8D5C8;
 }
 
 .close {
-    float:right;
-    cursor:pointer;
-    font-size:20px;
+    display: none;
 }
 
 .del{
@@ -286,7 +352,7 @@ td {
                    Edit
                 </button>
                 <a class="del" href="?page=inventory&delete=<?= $row['ProductID'] ?>" 
-                   onclick="return confirm('Delete this product?')"
+                   data-name="<?= htmlspecialchars($row['ProductName'], ENT_QUOTES) ?>"
                    style="color:white; background-color: red;">
                    Delete
                 </a>
@@ -299,89 +365,181 @@ td {
 
 <div id="addModal" class="modal">
     <div class="modal-content">
-        <span class="close" onclick="closeModal()">&times;</span>
-        <h3 style="color:black;">Add Product</h3>
+        <div class="modal-title-row">
+            <h3>Add Product</h3>
+            <button class="modal-close" type="button" onclick="closeModal()">&times;</button>
+        </div>
 
-        <form method="POST" enctype="multipart/form-data">
-            <input type="text" name="name" placeholder="Product Name" required>
-
-            <select name="category" required>
-                <option value="">Select Category</option>
-                <?php foreach ($categories as $c): ?>
-                    <option value="<?= $c['CategoryID'] ?>">
-                        <?= $c['CategoryName'] ?>
-                    </option>
-                <?php endforeach; ?>
-            </select>
-
-            <input type="number" name="price" placeholder="Price/kg" min="0" step="0.01" required>
-            <input type="number" name="stock" placeholder="Stock (kg)" min="0" step="0.01" required>
-            <input type="file" name="image" accept="image/*">
-
-            <button class="btn" name="add">Save</button>
+        <form class="modal-form" method="POST" enctype="multipart/form-data" onsubmit="return validateProductForm(this)">
+            <label>
+                Product Name
+                <input type="text" name="name" placeholder="Product Name" required>
+            </label>
+            <label>
+                Category
+                <select name="category" required>
+                    <option value="">Select Category</option>
+                    <?php foreach ($categories as $c): ?>
+                        <option value="<?= $c['CategoryID'] ?>">
+                            <?= $c['CategoryName'] ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>
+                Price per kg
+                <input type="number" name="price" placeholder="Price/kg" min="0" step="0.01" required>
+            </label>
+            <label>
+                Stock (kg)
+                <input type="number" name="stock" placeholder="Stock (kg)" min="0" step="0.01" required>
+            </label>
+            <label>
+                Product Image
+                <input type="file" name="image" accept="image/*">
+            </label>
+            <div class="modal-actions">
+                
+                <button class="btn" name="add" type="submit">Save Product</button>
+            </div>
         </form>
     </div>
 </div>
 
 <div id="editModal" class="modal">
     <div class="modal-content">
-        <span class="close" onclick="closeEditModal()">&times;</span>
-        <h3 style="color:black;">Edit Product</h3>
+        <div class="modal-title-row">
+            <h3>Edit Product</h3>
+            <button class="modal-close" type="button" onclick="closeEditModal()">&times;</button>
+        </div>
 
-        <form method="POST" enctype="multipart/form-data">
+        <form class="modal-form" method="POST" enctype="multipart/form-data" onsubmit="return validateProductForm(this)">
             <input type="hidden" name="product_id" id="editProductId">
-            <input type="text" name="name" id="editName" placeholder="Product Name" required>
-
-            <select name="category" id="editCategory" required>
-                <option value="">Select Category</option>
-                <?php foreach ($categories as $c): ?>
-                    <option value="<?= $c['CategoryID'] ?>">
-                        <?= $c['CategoryName'] ?>
-                    </option>
-                <?php endforeach; ?>
-            </select>
-
-            <input type="number" name="price" id="editPrice" placeholder="Price/kg" min="0" step="0.01" required>
-            <input type="number" name="stock" id="editStock" placeholder="Stock (kg)" min="0" step="0.01" required>
-            <input type="file" name="image" accept="image/*">
-
-            <button class="btn" name="update">Update</button>
+            <label>
+                Product Name
+                <input type="text" name="name" id="editName" placeholder="Product Name" required>
+            </label>
+            <label>
+                Category
+                <select name="category" id="editCategory" required>
+                    <option value="">Select Category</option>
+                    <?php foreach ($categories as $c): ?>
+                        <option value="<?= $c['CategoryID'] ?>">
+                            <?= $c['CategoryName'] ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>
+                Price per kg
+                <input type="number" name="price" id="editPrice" placeholder="Price/kg" min="0" step="0.01" required>
+            </label>
+            <label>
+                Stock (kg)
+                <input type="number" name="stock" id="editStock" placeholder="Stock (kg)" min="0" step="0.01" required>
+            </label>
+            <label>
+                Product Image
+                <input type="file" name="image" accept="image/*">
+            </label>
+            <div class="modal-actions">
+                
+                <button class="btn" name="update" type="submit">Update Product</button>
+            </div>
         </form>
     </div>
 </div>
 
 <script>
 
+function validateProductForm(form) {
+    const price = parseFloat(form.querySelector('input[name="price"]').value);
+    const stock = parseFloat(form.querySelector('input[name="stock"]').value);
+    const name = form.querySelector('input[name="name"]').value.trim();
+    const category = form.querySelector('select[name="category"]').value;
+
+    if (!name || !category) {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                title: 'Missing information',
+                text: 'Please fill in product name and category.',
+                icon: 'warning',
+                confirmButtonColor: '#B85C38'
+            });
+        }
+        return false;
+    }
+
+    if (Number.isNaN(price) || price <= 0 || Number.isNaN(stock) || stock <= 0) {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                title: 'Invalid values',
+                text: 'Price and stock must be positive numbers.',
+                icon: 'error',
+                confirmButtonColor: '#B85C38'
+            });
+        }
+        return false;
+    }
+
+    return true;
+}
+
 function openModal() {
-    document.getElementById("addModal").style.display = "block";
+    document.getElementById('addModal').classList.add('open');
 }
 
 function closeModal() {
-    document.getElementById("addModal").style.display = "none";
+    document.getElementById('addModal').classList.remove('open');
 }
 
 function openEditModal(button) {
-    document.getElementById("editProductId").value = button.dataset.id;
-    document.getElementById("editName").value = button.dataset.name;
-    document.getElementById("editCategory").value = button.dataset.category;
-    document.getElementById("editPrice").value = button.dataset.price;
-    document.getElementById("editStock").value = button.dataset.stock;
-    document.getElementById("editModal").style.display = "block";
+    document.getElementById('editProductId').value = button.dataset.id;
+    document.getElementById('editName').value = button.dataset.name;
+    document.getElementById('editCategory').value = button.dataset.category;
+    document.getElementById('editPrice').value = button.dataset.price;
+    document.getElementById('editStock').value = button.dataset.stock;
+    document.getElementById('editModal').classList.add('open');
 }
 
 function closeEditModal() {
-    document.getElementById("editModal").style.display = "none";
+    document.getElementById('editModal').classList.remove('open');
 }
 
-window.onclick = function(e) {
-    let addModal = document.getElementById("addModal");
-    let editModal = document.getElementById("editModal");
-    if (e.target == addModal) {
-        addModal.style.display = "none";
-    }
-    if (e.target == editModal) {
-        editModal.style.display = "none";
-    }
+document.querySelectorAll('.modal').forEach(function(modal) {
+    modal.addEventListener('click', function(event) {
+        if (event.target === modal) {
+            modal.classList.remove('open');
+        }
+    });
+});
+
+const deleteButtons = document.querySelectorAll('.del');
+if (deleteButtons.length) {
+    deleteButtons.forEach(function(button) {
+        button.addEventListener('click', function(event) {
+            event.preventDefault();
+
+            if (typeof Swal === 'undefined') {
+                return;
+            }
+
+            Swal.fire({
+                title: 'Delete product?',
+                text: button.dataset.name + ' will be removed from inventory.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#D53E0F',
+                cancelButtonColor: '#6B4C3B',
+                confirmButtonText: 'Yes, delete',
+                cancelButtonText: 'Cancel'
+            }).then(function(result) {
+                if (result.isConfirmed) {
+                    window.location.href = button.href;
+                }
+            });
+        });
+    });
 }
 
 </script>

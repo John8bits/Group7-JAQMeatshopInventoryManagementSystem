@@ -61,15 +61,19 @@ function productClass($name) {
 $productStmt = $conn->prepare("
     SELECT ProductID, ProductName, PricePerKg, StockWeight, ProductImage
     FROM product
-    WHERE Status = 'Available' AND StockWeight > 0
+    WHERE Status = 'Available'
     ORDER BY ProductName
 ");
 $productStmt->execute();
 $products = $productStmt->fetchAll(PDO::FETCH_ASSOC);
 
 $productsById = [];
+$sellableProductCount = 0;
 foreach ($products as $productRow) {
     $productsById[(int)$productRow['ProductID']] = $productRow;
+    if ((float)$productRow['StockWeight'] > 0) {
+        $sellableProductCount++;
+    }
 }
 
 // Handle Add to Cart
@@ -82,6 +86,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action'])) {
             $product = $productsById[$productId];
             $price = (float)$product['PricePerKg'];
             $availableStock = (float)$product['StockWeight'];
+            if ($availableStock <= 0) {
+                $_SESSION['cart_error'] = $product['ProductName'] . ' is out of stock.';
+                header("Location: " . $_SERVER['PHP_SELF']);
+                exit;
+            }
             $currentCartWeight = 0;
             foreach ($_SESSION['cart'] as $item) {
                 if ((int)$item['id'] === $productId) {
@@ -144,9 +153,23 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action'])) {
                     $updateStockStmt->execute([$item['weight'], $item['id']]);
                 }
 
+                $receiptItems = $cart;
+                $receiptTotal = array_sum(array_column($cart, 'total'));
+                $receiptWeight = array_sum(array_column($cart, 'weight'));
+                $receiptDate = date('Y-m-d H:i:s');
+                $cashReceived = (float)($_POST['cash_received'] ?? 0);
+
                 $conn->commit();
                 $_SESSION['cart'] = [];
-                $_SESSION['last_sale'] = date('Y-m-d H:i:s');
+                $_SESSION['last_receipt'] = [
+                    'items' => $receiptItems,
+                    'total' => $receiptTotal,
+                    'weight' => $receiptWeight,
+                    'cash_received' => $cashReceived,
+                    'change' => max(0, $cashReceived - $receiptTotal),
+                    'date' => $receiptDate,
+                    'cashier' => $_SESSION['username'],
+                ];
             } catch (Exception $e) {
                 if ($conn->inTransaction()) {
                     $conn->rollBack();
@@ -165,6 +188,10 @@ $_SESSION['cart'] = $cart;
 $grand_total = array_sum(array_column($cart, 'total'));
 $total_weight = array_sum(array_column($cart, 'weight'));
 $cart_count = count($cart);
+$lastReceipt = $_SESSION['last_receipt'] ?? null;
+unset($_SESSION['last_receipt']);
+$cartError = $_SESSION['cart_error'] ?? null;
+unset($_SESSION['cart_error']);
 ?>
 
 <!DOCTYPE html>
@@ -174,17 +201,9 @@ $cart_count = count($cart);
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cashier — JAQ Meatshop</title>
 <link rel="stylesheet" href="../css/cashier_style.css">
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
- 
-<?php if (isset($_SESSION['last_sale']) && time() - strtotime($_SESSION['last_sale']) < 5): unset($_SESSION['last_sale']); ?>
-<div class="flash" style="position:fixed;top:1rem;left:50%;transform:translateX(-50%);z-index:999;white-space:nowrap">✅ Sale completed successfully!</div>
-<?php endif; ?>
-<?php if (isset($_SESSION['cart_error'])): ?>
-<div class="flash" style="position:fixed;top:1rem;left:50%;transform:translateX(-50%);z-index:999;white-space:nowrap;background:#E74C3C">
-  <?= htmlspecialchars($_SESSION['cart_error']) ?>
-</div>
-<?php unset($_SESSION['cart_error']); endif; ?>
  
 <div class="pos-wrap">
   <!-- LEFT PANEL -->
@@ -208,13 +227,22 @@ $cart_count = count($cart);
         </div>
       <?php else: ?>
         <?php foreach ($products as $index => $product): ?>
+          <?php $isOutOfStock = (float)$product['StockWeight'] <= 0; ?>
           <div
-            class="product-card <?= productClass($product['ProductName']) ?>"
-            onclick="pickProduct('<?= htmlspecialchars($product['ProductID']) ?>')">
-            <?php if ($index === 0): ?><div class="product-tag">Available</div><?php endif; ?>
+            class="product-card <?= productClass($product['ProductName']) ?> <?= $isOutOfStock ? 'out-of-stock' : '' ?>"
+            <?php if (!$isOutOfStock): ?>
+              onclick="pickProduct('<?= htmlspecialchars($product['ProductID']) ?>')"
+            <?php endif; ?>>
+            <div class="product-tag <?= $isOutOfStock ? 'stock-out' : '' ?>">
+              <?= $isOutOfStock ? 'Out of stock' : 'Available' ?>
+            </div>
             <img src="<?= htmlspecialchars(productImage($product)) ?>" alt="<?= htmlspecialchars($product['ProductName']) ?>" class="product-img">
             <div class="product-name"><?= htmlspecialchars($product['ProductName']) ?></div>
             <div class="product-price">₱<strong><?= number_format((float)$product['PricePerKg'], 2) ?></strong>/kg</div>
+            <div class="product-stock <?= $isOutOfStock ? 'stock-empty' : '' ?>">
+              <?= $isOutOfStock ? 'Availability: ' : 'Available: ' ?>
+              <strong><?= $isOutOfStock ? 'Out of stock' : number_format((float)$product['StockWeight'], 2) . ' kg' ?></strong>
+            </div>
           </div>
         <?php endforeach; ?>
       <?php endif; ?>
@@ -233,15 +261,16 @@ $cart_count = count($cart);
             <div class="field-label">Product</div>
             <select class="product-select" name="product" id="productSelect" required>
               <?php foreach ($products as $product): ?>
-                <option value="<?= htmlspecialchars($product['ProductID']) ?>">
-                  <?= productIcon($product['ProductName']) ?> <?= htmlspecialchars($product['ProductName']) ?> — ₱<?= number_format((float)$product['PricePerKg'], 2) ?>/kg
+                <?php $isOutOfStock = (float)$product['StockWeight'] <= 0; ?>
+                <option value="<?= htmlspecialchars($product['ProductID']) ?>" <?= $isOutOfStock ? 'disabled' : '' ?>>
+                  <?= productIcon($product['ProductName']) ?> <?= htmlspecialchars($product['ProductName']) ?> — ₱<?= number_format((float)$product['PricePerKg'], 2) ?>/kg — <?= $isOutOfStock ? 'Out of stock' : 'Stock: ' . number_format((float)$product['StockWeight'], 2) . ' kg' ?>
                 </option>
               <?php endforeach; ?>
             </select>
           </div>
           <div class="field-group">
             <div class="field-label">&nbsp;</div>
-            <button type="submit" class="btn-add" <?= empty($products) ? 'disabled' : '' ?>>+ Add</button>
+            <button type="submit" class="btn-add" <?= $sellableProductCount === 0 ? 'disabled' : '' ?>>+ Add</button>
           </div>
         </div>
       </form>
@@ -339,14 +368,50 @@ $cart_count = count($cart);
       <button class="btn-cancel" onclick="document.getElementById('modalOverlay').classList.remove('open')">← Back</button>
       <form method="POST" style="flex:1">
         <input type="hidden" name="action" value="checkout">
+        <input type="hidden" name="cash_received" id="cashReceivedInput">
         <button type="submit" class="btn-confirm" id="confirmBtn" disabled style="width:100%">✓ Confirm Sale</button>
       </form>
     </div>
   </div>
 </div>
+
+<?php if ($lastReceipt): ?>
+<div id="printReceipt" class="print-receipt">
+  <div class="print-shop">JAQ Meatshop</div>
+  <div class="print-sub">Official Receipt</div>
+  <div class="print-meta">Cashier: <?= htmlspecialchars($lastReceipt['cashier']) ?></div>
+  <div class="print-meta">Date: <?= htmlspecialchars(date('M d, Y h:i A', strtotime($lastReceipt['date']))) ?></div>
+  <div class="print-line"></div>
+  <?php foreach ($lastReceipt['items'] as $item): ?>
+    <div class="print-row">
+      <span><?= htmlspecialchars($item['name']) ?> (<?= number_format((float)$item['weight'], 2) ?> kg)</span>
+      <span>₱<?= number_format((float)$item['total'], 2) ?></span>
+    </div>
+  <?php endforeach; ?>
+  <div class="print-line"></div>
+  <div class="print-row">
+    <strong>Total Weight</strong>
+    <strong><?= number_format((float)$lastReceipt['weight'], 2) ?> kg</strong>
+  </div>
+  <div class="print-row">
+    <strong>Total</strong>
+    <strong>₱<?= number_format((float)$lastReceipt['total'], 2) ?></strong>
+  </div>
+  <div class="print-row">
+    <span>Cash Received</span>
+    <span>₱<?= number_format((float)$lastReceipt['cash_received'], 2) ?></span>
+  </div>
+  <div class="print-row">
+    <span>Change</span>
+    <span>₱<?= number_format((float)$lastReceipt['change'], 2) ?></span>
+  </div>
+  <div class="print-thanks">Thank you!</div>
+</div>
+<?php endif; ?>
  
 <script>
 function pickProduct(name, price) {
+  if (event.currentTarget.classList.contains('out-of-stock')) return;
   document.querySelectorAll('.product-card').forEach(c => c.classList.remove('active'));
   event.currentTarget.classList.add('active');
   document.getElementById('productSelect').value = name;
@@ -359,6 +424,8 @@ function computeChange(total) {
   const disp = document.getElementById('changeDisplay');
   const amt = document.getElementById('changeAmount');
   const btn = document.getElementById('confirmBtn');
+  const cashInputHidden = document.getElementById('cashReceivedInput');
+  if (cashInputHidden) cashInputHidden.value = cash.toFixed(2);
   if (cash <= 0) { amt.textContent = '₱0.00'; disp.className = 'change-display'; btn.disabled = true; return; }
   if (change < 0) {
     amt.textContent = '-₱' + Math.abs(change).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -374,6 +441,44 @@ function computeChange(total) {
 document.getElementById('modalOverlay').addEventListener('click', function(e) {
   if (e.target === this) this.classList.remove('open');
 });
+
+const productSelect = document.getElementById('productSelect');
+if (productSelect) {
+  const firstAvailableOption = productSelect.querySelector('option:not(:disabled)');
+  if (firstAvailableOption) {
+    productSelect.value = firstAvailableOption.value;
+  }
+}
+
+<?php if ($cartError): ?>
+if (typeof Swal !== 'undefined') {
+  Swal.fire({
+    title: 'Unable to add item',
+    text: <?= json_encode($cartError) ?>,
+    icon: 'error',
+    confirmButtonColor: '#B85C38'
+  });
+}
+<?php endif; ?>
+
+<?php if ($lastReceipt): ?>
+if (typeof Swal !== 'undefined') {
+  Swal.fire({
+    title: 'Sale completed',
+    text: 'Transaction saved successfully.',
+    icon: 'success',
+    showCancelButton: true,
+    confirmButtonText: 'Print Receipt',
+    cancelButtonText: 'Close',
+    confirmButtonColor: '#2D7A4F',
+    cancelButtonColor: '#6B4C3B'
+  }).then(function(result) {
+    if (result.isConfirmed) {
+      window.print();
+    }
+  });
+}
+<?php endif; ?>
 </script>
 </body>
 </html>
