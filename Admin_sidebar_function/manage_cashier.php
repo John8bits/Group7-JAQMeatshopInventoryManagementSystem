@@ -8,11 +8,10 @@ $conn = $db->conn;
         $hashedPassword = password_hash($_POST['password'], PASSWORD_DEFAULT);
 
         $stmt = $conn->prepare("
-            INSERT INTO users (username, Password, role)
+            INSERT INTO users (username, password, role)
             VALUES (?, ?, 'cashier')
         ");
         $stmt->execute([
-            $_POST['name'],
             $_POST['username'],
             $hashedPassword,
         ]);
@@ -141,7 +140,7 @@ tr:hover {
 
         <?php foreach ($users as $row): ?>
         <tr>
-            <td><?= $row['username'] ?></td>
+            <td><?= htmlspecialchars($row['username']) ?></td>
             <td>
                 <a class="delete"
                    href="?page=cashier&delete=<?= $row['id'] ?>"

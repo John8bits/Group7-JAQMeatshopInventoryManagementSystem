@@ -18,6 +18,21 @@ if (isset($_POST['add'])) {
     ]);
 }
 
+if (isset($_POST['update'])) {
+    $stmt = $conn->prepare("
+        UPDATE product
+        SET ProductName = ?, CategoryID = ?, PricePerKg = ?, StockWeight = ?
+        WHERE ProductID = ?
+    ");
+    $stmt->execute([
+        $_POST['name'],
+        $_POST['category'],
+        $_POST['price'],
+        $_POST['stock'],
+        $_POST['product_id']
+    ]);
+}
+
 if (isset($_GET['delete'])) {
     $stmt = $conn->prepare("DELETE FROM product WHERE ProductID = ?");
     $stmt->execute([$_GET['delete']]);
@@ -137,6 +152,21 @@ td {
     background:#b7320c;
 }
 
+.edit{
+    color:white;
+    background:#1f6f55;
+    padding:6px 10px;
+    border-radius:6px;
+    text-decoration:none;
+    border:none;
+    cursor:pointer;
+    margin-right:6px;
+}
+
+.edit:hover{
+    background:#175640;
+}
+
 
 </style>
 
@@ -158,11 +188,22 @@ td {
 
         <?php foreach ($products as $row): ?>
         <tr>
-            <td><?= $row['ProductName'] ?></td>
-            <td><?= $row['CategoryName'] ?></td>
-            <td>₱<?= $row['PricePerKg'] ?></td>
-            <td><?= $row['StockWeight'] ?> kg</td>
+            <td><?= htmlspecialchars($row['ProductName']) ?></td>
+            <td><?= htmlspecialchars($row['CategoryName']) ?></td>
+            <td>₱<?= number_format((float)$row['PricePerKg'], 2) ?></td>
+            <td><?= number_format((float)$row['StockWeight'], 2) ?> kg</td>
             <td>
+                <button
+                   type="button"
+                   class="edit"
+                   data-id="<?= htmlspecialchars($row['ProductID']) ?>"
+                   data-name="<?= htmlspecialchars($row['ProductName']) ?>"
+                   data-category="<?= htmlspecialchars($row['CategoryID']) ?>"
+                   data-price="<?= htmlspecialchars($row['PricePerKg']) ?>"
+                   data-stock="<?= htmlspecialchars($row['StockWeight']) ?>"
+                   onclick="openEditModal(this)">
+                   Edit
+                </button>
                 <a class="del" href="?page=inventory&delete=<?= $row['ProductID'] ?>" 
                    onclick="return confirm('Delete this product?')"
                    style="color:white; background-color: red;">
@@ -192,10 +233,36 @@ td {
                 <?php endforeach; ?>
             </select>
 
-            <input type="number" name="price" placeholder="Price/kg" required>
-            <input type="number" name="stock" placeholder="Stock (kg)" required>
+            <input type="number" name="price" placeholder="Price/kg" min="0" step="0.01" required>
+            <input type="number" name="stock" placeholder="Stock (kg)" min="0" step="0.01" required>
 
             <button class="btn" name="add">Save</button>
+        </form>
+    </div>
+</div>
+
+<div id="editModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeEditModal()">&times;</span>
+        <h3 style="color:black;">Edit Product</h3>
+
+        <form method="POST">
+            <input type="hidden" name="product_id" id="editProductId">
+            <input type="text" name="name" id="editName" placeholder="Product Name" required>
+
+            <select name="category" id="editCategory" required>
+                <option value="">Select Category</option>
+                <?php foreach ($categories as $c): ?>
+                    <option value="<?= $c['CategoryID'] ?>">
+                        <?= $c['CategoryName'] ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+
+            <input type="number" name="price" id="editPrice" placeholder="Price/kg" min="0" step="0.01" required>
+            <input type="number" name="stock" id="editStock" placeholder="Stock (kg)" min="0" step="0.01" required>
+
+            <button class="btn" name="update">Update</button>
         </form>
     </div>
 </div>
@@ -210,10 +277,27 @@ function closeModal() {
     document.getElementById("addModal").style.display = "none";
 }
 
+function openEditModal(button) {
+    document.getElementById("editProductId").value = button.dataset.id;
+    document.getElementById("editName").value = button.dataset.name;
+    document.getElementById("editCategory").value = button.dataset.category;
+    document.getElementById("editPrice").value = button.dataset.price;
+    document.getElementById("editStock").value = button.dataset.stock;
+    document.getElementById("editModal").style.display = "block";
+}
+
+function closeEditModal() {
+    document.getElementById("editModal").style.display = "none";
+}
+
 window.onclick = function(e) {
-    let modal = document.getElementById("addModal");
-    if (e.target == modal) {
-        modal.style.display = "none";
+    let addModal = document.getElementById("addModal");
+    let editModal = document.getElementById("editModal");
+    if (e.target == addModal) {
+        addModal.style.display = "none";
+    }
+    if (e.target == editModal) {
+        editModal.style.display = "none";
     }
 }
 
