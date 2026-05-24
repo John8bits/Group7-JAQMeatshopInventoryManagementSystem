@@ -51,16 +51,55 @@ function uploadProductImage($fieldName) {
     return 'uploads/products/' . $fileName;
 }
 
+function ensureCategory(PDO $conn, $categoryName) {
+    $stmt = $conn->prepare("SELECT CategoryID FROM category WHERE CategoryName = ? LIMIT 1");
+    $stmt->execute([$categoryName]);
+    $categoryId = $stmt->fetchColumn();
+
+    if ($categoryId) {
+        return (int)$categoryId;
+    }
+
+    $stmt = $conn->prepare("INSERT INTO category (CategoryName, Status) VALUES (?, 'Active')");
+    $stmt->execute([$categoryName]);
+    return (int)$conn->lastInsertId();
+}
+
+$addCategories = [
+    'Meat' => ensureCategory($conn, 'Meat'),
+    'Processed Food' => ensureCategory($conn, 'Processed Foods'),
+];
+
 if (isset($_POST['add'])) {
     $productImage = uploadProductImage('image');
+    $categoryStmt = $conn->prepare("SELECT CategoryName FROM category WHERE CategoryID = ?");
+    $categoryStmt->execute([$_POST['category']]);
+    $categoryName = trim((string)$categoryStmt->fetchColumn());
+    $productGroup = trim((string)($_POST['product_group'] ?? ''));
+    $productVariant = trim((string)($_POST['product_variant'] ?? ''));
+    $productPart = trim((string)($_POST['part'] ?? ''));
+    $productName = trim((string)($_POST['name'] ?? ''));
+
+    if ($productName === '') {
+        if ($categoryName === 'Meat' && $productVariant !== '') {
+            $productName = stripos($productVariant, $productGroup) !== false
+                ? $productVariant
+                : trim($productGroup . ' ' . $productVariant);
+            $productPart = $productVariant;
+        } elseif ($productGroup !== '') {
+            $productName = $productGroup;
+            $productPart = $productPart !== '' ? $productPart : $productGroup;
+        }
+    }
+
     $stmt = $conn->prepare("
         INSERT INTO product 
         (ProductName, ProductPart, CategoryID, PricePerKg, StockWeight, ProductImage, DateAdded, Status)
         VALUES (?, ?, ?, ?, ?, ?, NOW(), 'Available')
     ");
     $stmt->execute([
-        $_POST['name'],
-        $_POST['part'],
+        $productName,
+        $productPart,
         $_POST['category'],
         $_POST['price'],
         $_POST['stock'],
@@ -383,24 +422,33 @@ td {
 
         <form class="modal-form" method="POST" enctype="multipart/form-data" onsubmit="return validateProductForm(this)">
             <label>
-                Product Name
-                <input type="text" name="name" placeholder="Product Name" required>
-            </label>
-            <label>
-                Meat Part / Cut
-                <input type="text" name="part" placeholder="e.g. Pig feet, Belly, Rib, Leg" required>
-            </label>
-            <label>
-                Animal Category
-                <select name="category" required>
-                    <option value="">Select Animal Category</option>
-                    <?php foreach ($categories as $c): ?>
-                        <option value="<?= $c['CategoryID'] ?>">
-                            <?= $c['CategoryName'] ?>
+                Category
+                <select name="category" id="addCategory" required onchange="handleAddCategoryChange()">
+                    <option value="">Select Category</option>
+                    <?php foreach ($addCategories as $label => $categoryId): ?>
+                        <option value="<?= htmlspecialchars($categoryId) ?>" data-name="<?= htmlspecialchars($label, ENT_QUOTES) ?>">
+                            <?= htmlspecialchars($label) ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
             </label>
+            <label>
+                Product Type
+                <select name="product_group" id="addProductGroup" required onchange="handleAddProductGroupChange()">
+                    <option value="">Select Category First</option>
+                </select>
+            </label>
+            <label id="addVariantLabel">
+                Cut / Variant
+                <select name="product_variant" id="addProductVariant" onchange="updateAddProductName()">
+                    <option value="">Select Product Type First</option>
+                </select>
+            </label>
+            <label>
+                Product Name
+                <input type="text" name="name" id="addName" placeholder="Generated from category and meat part" readonly>
+            </label>
+            <input type="hidden" name="part" id="addPart">
             <label>
                 Price per kg
                 <input type="number" name="price" placeholder="Price/kg" min="0" step="0.01" required>
@@ -474,15 +522,16 @@ td {
 function validateProductForm(form) {
     const price = parseFloat(form.querySelector('input[name="price"]').value);
     const stock = parseFloat(form.querySelector('input[name="stock"]').value);
-    const name = form.querySelector('input[name="name"]').value.trim();
+    const nameInput = form.querySelector('input[name="name"]');
+    const name = nameInput ? nameInput.value.trim() : '';
     const part = form.querySelector('input[name="part"]').value.trim();
     const category = form.querySelector('select[name="category"]').value;
 
-    if (!name || !part || !category) {
+    if (!part || !category || (nameInput && !name)) {
         if (typeof Swal !== 'undefined') {
             Swal.fire({
                 title: 'Missing information',
-                text: 'Please fill in product name, meat part, and animal category.',
+                text: 'Please select a category, product type, and cut or variant when required.',
                 icon: 'warning',
                 confirmButtonColor: '#B85C38'
             });
@@ -505,7 +554,99 @@ function validateProductForm(form) {
     return true;
 }
 
+const addProductChoices = {
+    Meat: {
+        Pork: ['Shoulder', 'Hind Leg', 'Pork Belly', 'Loin', 'Ribs', 'Leg', 'Bony Cuts', 'Head Parts', 'Organs'],
+        Beef: ['Chuck', 'Brisket', 'Rib', 'Short Ribs', 'Loin', 'Sirloin', 'Tenderloin', 'Round', 'Shank', 'Flank'],
+        Chicken: ['Whole Chicken', 'Breast', 'Thigh', 'Drumstick', 'Wings', 'Back', 'Neck', 'Feet'],
+        Liver: [],
+        Egg: []
+    },
+    'Processed Food': {
+        Hotdog: [],
+        Longganisa: [],
+        Tocino: [],
+        Bacon: [],
+        Ham: []
+    }
+};
+
+function setSelectOptions(select, options, placeholder) {
+    select.innerHTML = '';
+
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = placeholder;
+    select.appendChild(defaultOption);
+
+    options.forEach(function(optionText) {
+        const option = document.createElement('option');
+        option.value = optionText;
+        option.textContent = optionText;
+        select.appendChild(option);
+    });
+}
+
+function selectedAddCategoryName() {
+    const category = document.getElementById('addCategory');
+    const selected = category ? category.options[category.selectedIndex] : null;
+    return selected ? (selected.dataset.name || selected.textContent).trim() : '';
+}
+
+function handleAddCategoryChange() {
+    const group = document.getElementById('addProductGroup');
+    const variant = document.getElementById('addProductVariant');
+    const categoryName = selectedAddCategoryName();
+    const groupNames = Object.keys(addProductChoices[categoryName] || {});
+
+    setSelectOptions(group, groupNames, categoryName ? 'Select Product Type' : 'Select Category First');
+    setSelectOptions(variant, [], 'Select Product Type First');
+    handleAddProductGroupChange();
+}
+
+function handleAddProductGroupChange() {
+    const group = document.getElementById('addProductGroup');
+    const variant = document.getElementById('addProductVariant');
+    const variantLabel = document.getElementById('addVariantLabel');
+    const categoryName = selectedAddCategoryName();
+    const groupName = group.value;
+    const variants = (addProductChoices[categoryName] && addProductChoices[categoryName][groupName]) || [];
+
+    setSelectOptions(variant, variants, variants.length ? 'Select Cut / Variant' : 'No cut needed');
+    variant.disabled = variants.length === 0;
+    variantLabel.style.display = variants.length ? 'grid' : 'none';
+    updateAddProductName();
+}
+
+function updateAddProductName() {
+    const category = document.getElementById('addCategory');
+    const group = document.getElementById('addProductGroup');
+    const variant = document.getElementById('addProductVariant');
+    const part = document.getElementById('addPart');
+    const name = document.getElementById('addName');
+
+    if (!category || !group || !variant || !part || !name) {
+        return;
+    }
+
+    const groupName = group.value;
+    const variantName = variant.disabled ? '' : variant.value;
+    const requiresVariant = !variant.disabled;
+
+    if (!category.value || !groupName || (requiresVariant && !variantName)) {
+        name.value = '';
+        part.value = '';
+        return;
+    }
+
+    name.value = variantName
+        ? (variantName.toLowerCase().includes(groupName.toLowerCase()) ? variantName : groupName + ' ' + variantName)
+        : groupName;
+    part.value = variantName || groupName;
+}
+
 function openModal() {
+    handleAddCategoryChange();
     document.getElementById('addModal').classList.add('open');
 }
 

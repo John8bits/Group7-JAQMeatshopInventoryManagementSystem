@@ -10,9 +10,11 @@ $page = isset($_GET['page']) ? $_GET['page'] : 'home';
 $pages = [
     'home'      => ['title' => 'Dashboard',       'sub' => 'Overview of your meatshop operations'],
     'inventory' => ['title' => 'Inventory',        'sub' => 'Track and manage meat stock'],
+    'supplier'  => ['title' => 'Supplier',         'sub' => 'Supplier records & contact details'],
     'reports'   => ['title' => 'Sales Report',     'sub' => 'Daily sales & waste analytics'],
     'alerts'    => ['title' => 'Alerts',           'sub' => 'Low stock & expiry notifications'],
     'cashier'   => ['title' => 'Manage Cashier',   'sub' => 'Cashier accounts & access'],
+    'database_backup' => ['title' => 'Database Backup', 'sub' => 'Save, recover, and manage database backups'],
 ];
 $current = $pages[$page] ?? $pages['home'];
 
@@ -89,6 +91,9 @@ $todaySales = (float)($salesStmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
     <a href="?page=inventory" class="nav-link <?= $page==='inventory' ? 'active' : '' ?>">
       <i class="ti ti-building-warehouse"></i> Inventory
     </a>
+    <a href="?page=supplier" class="nav-link <?= $page==='supplier' ? 'active' : '' ?>">
+      <i class="ti ti-truck-delivery"></i> Supplier
+    </a>
     <a href="?page=reports" class="nav-link <?= $page==='reports' ? 'active' : '' ?>">
       <i class="ti ti-chart-bar"></i> Reports
     </a>
@@ -100,6 +105,9 @@ $todaySales = (float)($salesStmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
     </a>
     <a href="?page=cashier" class="nav-link <?= $page==='cashier' ? 'active' : '' ?>">
       <i class="ti ti-users"></i> Manage Cashier
+    </a>
+    <a href="?page=database_backup" class="nav-link <?= $page==='database_backup' ? 'active' : '' ?>">
+      <i class="ti ti-database-export"></i> Database Backup
     </a>
   </div>
  
@@ -180,6 +188,13 @@ $todaySales = (float)($salesStmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
             <div class="quick-desc">Daily sales & waste logs</div>
           </div>
         </a>
+        <a href="?page=supplier" class="quick-card">
+          <div class="quick-icon"><i class="ti ti-truck-delivery"></i></div>
+          <div>
+            <div class="quick-title">Supplier</div>
+            <div class="quick-desc">Manage supplier records</div>
+          </div>
+        </a>
         <a href="?page=alerts" class="quick-card">
           <div class="quick-icon">⚠️</div>
           <div>
@@ -194,6 +209,13 @@ $todaySales = (float)($salesStmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
             <div class="quick-desc">Add or edit cashier accounts</div>
           </div>
         </a>
+        <a href="?page=database_backup" class="quick-card">
+          <div class="quick-icon"><i class="ti ti-database-export"></i></div>
+          <div>
+            <div class="quick-title">Database Backup</div>
+            <div class="quick-desc">Save or recover database files</div>
+          </div>
+        </a>
       </div>
  
     <?php else: ?>
@@ -201,9 +223,11 @@ $todaySales = (float)($salesStmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
         <?php
         switch ($page) {
             case 'inventory': include '../Admin_sidebar_function/inventory.php'; break;
+            case 'supplier':  include '../Admin_sidebar_function/supplier.php';  break;
             case 'reports':   include '../Admin_sidebar_function/reports.php';   break;
             case 'alerts':    include '../Admin_sidebar_function/alert.php';      break;
             case 'cashier':   include '../Admin_sidebar_function/manage_cashier.php'; break;
+            case 'database_backup': include '../Admin_sidebar_function/database_backup.php'; break;
         }
         ?>
       </div>

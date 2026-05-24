@@ -1,6 +1,6 @@
 -- JAQ Meatshop database backup
 -- Database: `informationmanagement`
--- Created: 2026-05-20 12:56:03
+-- Created: 2026-05-20 16:45:45
 SET FOREIGN_KEY_CHECKS=0;
 
 DROP TABLE IF EXISTS `category`;
@@ -55,12 +55,12 @@ CREATE TABLE `product` (
 INSERT INTO `product` (`ProductID`, `ProductName`, `ProductPart`, `ProductType`, `CategoryID`, `PricePerKg`, `StockWeight`, `DateAdded`, `Status`, `ProductImage`) VALUES ('1', 'Pig', NULL, NULL, '1', '350.00', '4.00', '2026-04-22 10:38:41', 'Unavailable', NULL);
 INSERT INTO `product` (`ProductID`, `ProductName`, `ProductPart`, `ProductType`, `CategoryID`, `PricePerKg`, `StockWeight`, `DateAdded`, `Status`, `ProductImage`) VALUES ('8', 'Beef', NULL, NULL, '1', '450.00', '7.00', '2026-05-20 09:31:00', 'Unavailable', 'uploads/products/product_6a0d0ed459ff41.58745897.jpg');
 INSERT INTO `product` (`ProductID`, `ProductName`, `ProductPart`, `ProductType`, `CategoryID`, `PricePerKg`, `StockWeight`, `DateAdded`, `Status`, `ProductImage`) VALUES ('11', 'Pig', NULL, NULL, '1', '260.00', '0.00', '2026-05-20 13:41:18', 'Unavailable', 'uploads/products/product_6a0d497e3c8994.16966384.jpg');
-INSERT INTO `product` (`ProductID`, `ProductName`, `ProductPart`, `ProductType`, `CategoryID`, `PricePerKg`, `StockWeight`, `DateAdded`, `Status`, `ProductImage`) VALUES ('15', 'Pork Belly', 'Pork Belly', 'Meat', '2', '320.00', '2.00', '2026-05-20 16:38:54', 'Available', 'uploads/products/product_6a0d731eb09b68.50031293.jpg');
+INSERT INTO `product` (`ProductID`, `ProductName`, `ProductPart`, `ProductType`, `CategoryID`, `PricePerKg`, `StockWeight`, `DateAdded`, `Status`, `ProductImage`) VALUES ('15', 'Pork Belly', 'Pork Belly', 'Meat', '2', '320.00', '5.00', '2026-05-20 16:38:54', 'Available', 'uploads/products/product_6a0d731eb09b68.50031293.jpg');
 INSERT INTO `product` (`ProductID`, `ProductName`, `ProductPart`, `ProductType`, `CategoryID`, `PricePerKg`, `StockWeight`, `DateAdded`, `Status`, `ProductImage`) VALUES ('16', 'Whole Chicken', 'Whole Chicken', 'Meat', '4', '200.00', '6.00', '2026-05-20 16:39:18', 'Available', 'uploads/products/product_6a0d7336e7c155.98837993.jpg');
 INSERT INTO `product` (`ProductID`, `ProductName`, `ProductPart`, `ProductType`, `CategoryID`, `PricePerKg`, `StockWeight`, `DateAdded`, `Status`, `ProductImage`) VALUES ('17', 'Tenderloin', 'Tenderloin', 'Meat', '3', '400.00', '4.00', '2026-05-20 16:39:54', 'Available', 'uploads/products/product_6a0d735a743443.76431192.jpg');
 INSERT INTO `product` (`ProductID`, `ProductName`, `ProductPart`, `ProductType`, `CategoryID`, `PricePerKg`, `StockWeight`, `DateAdded`, `Status`, `ProductImage`) VALUES ('18', 'Leg', 'Leg', 'Meat', '2', '250.00', '4.00', '2026-05-20 16:54:41', 'Available', 'uploads/products/product_6a0d76d12d3975.33423737.jpg');
 INSERT INTO `product` (`ProductID`, `ProductName`, `ProductPart`, `ProductType`, `CategoryID`, `PricePerKg`, `StockWeight`, `DateAdded`, `Status`, `ProductImage`) VALUES ('19', 'Hotdog', 'Hotdog', 'Processed Foods', '5', '20.00', '7.00', '2026-05-20 16:55:08', 'Available', 'uploads/products/product_6a0d76ec28a1e1.83021197.webp');
-INSERT INTO `product` (`ProductID`, `ProductName`, `ProductPart`, `ProductType`, `CategoryID`, `PricePerKg`, `StockWeight`, `DateAdded`, `Status`, `ProductImage`) VALUES ('20', 'Thigh', 'Thigh', 'Meat', '4', '200.00', '2.00', '2026-05-20 17:20:33', 'Available', 'uploads/products/product_6a0d7ce17b8e75.76451526.webp');
+INSERT INTO `product` (`ProductID`, `ProductName`, `ProductPart`, `ProductType`, `CategoryID`, `PricePerKg`, `StockWeight`, `DateAdded`, `Status`, `ProductImage`) VALUES ('20', 'Thigh', 'Thigh', 'Meat', '4', '200.00', '6.00', '2026-05-20 17:20:33', 'Available', 'uploads/products/product_6a0d7ce17b8e75.76451526.webp');
 INSERT INTO `product` (`ProductID`, `ProductName`, `ProductPart`, `ProductType`, `CategoryID`, `PricePerKg`, `StockWeight`, `DateAdded`, `Status`, `ProductImage`) VALUES ('21', 'Organs', 'Organs', 'Meat', '2', '150.00', '5.00', '2026-05-20 17:21:53', 'Available', 'uploads/products/product_6a0d7d310149e9.56655843.webp');
 
 DROP TABLE IF EXISTS `supplier`;
@@ -94,15 +94,13 @@ CREATE TABLE `transactions` (
   KEY `id` (`id`),
   CONSTRAINT `transactions_ibfk_1` FOREIGN KEY (`ProductID`) REFERENCES `product` (`ProductID`),
   CONSTRAINT `transactions_ibfk_2` FOREIGN KEY (`id`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 INSERT INTO `transactions` (`TransactionID`, `ProductID`, `id`, `WeightSold`, `TotalPrice`, `DateTime`, `PaymentMethod`) VALUES ('1', '1', NULL, '1.00', '1000.00', '2026-05-08 10:02:06', NULL);
 INSERT INTO `transactions` (`TransactionID`, `ProductID`, `id`, `WeightSold`, `TotalPrice`, `DateTime`, `PaymentMethod`) VALUES ('2', '1', NULL, '2.00', '700.00', '2026-05-20 09:28:10', NULL);
 INSERT INTO `transactions` (`TransactionID`, `ProductID`, `id`, `WeightSold`, `TotalPrice`, `DateTime`, `PaymentMethod`) VALUES ('3', '11', NULL, '2.00', '520.00', '2026-05-20 14:03:25', NULL);
 INSERT INTO `transactions` (`TransactionID`, `ProductID`, `id`, `WeightSold`, `TotalPrice`, `DateTime`, `PaymentMethod`) VALUES ('4', '11', NULL, '3.00', '780.00', '2026-05-20 14:47:03', NULL);
 INSERT INTO `transactions` (`TransactionID`, `ProductID`, `id`, `WeightSold`, `TotalPrice`, `DateTime`, `PaymentMethod`) VALUES ('5', '8', NULL, '4.00', '1800.00', '2026-05-20 14:59:56', NULL);
-INSERT INTO `transactions` (`TransactionID`, `ProductID`, `id`, `WeightSold`, `TotalPrice`, `DateTime`, `PaymentMethod`) VALUES ('6', '20', NULL, '4.00', '800.00', '2026-05-20 18:53:39', NULL);
-INSERT INTO `transactions` (`TransactionID`, `ProductID`, `id`, `WeightSold`, `TotalPrice`, `DateTime`, `PaymentMethod`) VALUES ('7', '15', NULL, '3.00', '960.00', '2026-05-20 18:53:53', NULL);
 
 DROP TABLE IF EXISTS `users`;
 CREATE TABLE `users` (

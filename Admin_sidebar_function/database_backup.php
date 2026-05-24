@@ -12,6 +12,7 @@ if (!is_dir($backupDir)) {
 $databaseName = (string)$conn->query("SELECT DATABASE()")->fetchColumn();
 $message = null;
 $messageType = 'success';
+$pendingDeleteFile = $backupDir . DIRECTORY_SEPARATOR . '.delete-pending.json';
 
 function backupSafeName($name) {
     $name = trim((string)$name);
@@ -20,10 +21,110 @@ function backupSafeName($name) {
     return $name !== '' ? $name : 'backup';
 }
 
-function backupFiles($backupDir) {
+function pendingDeleteFiles($pendingDeleteFile) {
+    if (!is_file($pendingDeleteFile)) {
+        return [];
+    }
+
+    $pending = json_decode((string)file_get_contents($pendingDeleteFile), true);
+    return is_array($pending) ? $pending : [];
+}
+
+function savePendingDeleteFiles($pendingDeleteFile, array $pending) {
+    $pending = array_values(array_unique(array_filter($pending)));
+
+    if (empty($pending)) {
+        if (is_file($pendingDeleteFile)) {
+            @unlink($pendingDeleteFile);
+        }
+        return;
+    }
+
+    file_put_contents($pendingDeleteFile, json_encode($pending, JSON_PRETTY_PRINT));
+}
+
+function scheduleWindowsDelete($filePath) {
+    if (stripos(PHP_OS_FAMILY, 'Windows') !== 0) {
+        return;
+    }
+
+    $quotedPath = "'" . str_replace("'", "''", $filePath) . "'";
+    $script = "Start-Sleep -Seconds 2; Remove-Item -LiteralPath {$quotedPath} -Force -ErrorAction SilentlyContinue";
+    $encodedScript = function_exists('mb_convert_encoding')
+        ? mb_convert_encoding($script, 'UTF-16LE', 'UTF-8')
+        : iconv('UTF-8', 'UTF-16LE', $script);
+    $encoded = base64_encode($encodedScript);
+    $cmd = 'start /B powershell -NoProfile -WindowStyle Hidden -EncodedCommand ' . $encoded;
+    @pclose(@popen($cmd, 'r'));
+}
+
+function cleanupPendingDeletes($backupDir, $pendingDeleteFile) {
+    $pending = pendingDeleteFiles($pendingDeleteFile);
+    if (empty($pending)) {
+        return;
+    }
+
+    $remaining = [];
+    foreach ($pending as $fileName) {
+        $fileName = basename($fileName);
+        $filePath = $backupDir . DIRECTORY_SEPARATOR . $fileName;
+
+        clearstatcache(true, $filePath);
+        if (!is_file($filePath)) {
+            continue;
+        }
+
+        if (!@unlink($filePath)) {
+            scheduleWindowsDelete($filePath);
+            $remaining[] = $fileName;
+        }
+    }
+
+    savePendingDeleteFiles($pendingDeleteFile, $remaining);
+}
+
+function backupFiles($backupDir, array $pendingDeletes = []) {
     $files = glob($backupDir . DIRECTORY_SEPARATOR . '*.sql') ?: [];
+    if (!empty($pendingDeletes)) {
+        $pendingDeletes = array_flip($pendingDeletes);
+        $files = array_values(array_filter($files, fn($file) => !isset($pendingDeletes[basename($file)])));
+    }
     usort($files, fn($a, $b) => filemtime($b) <=> filemtime($a));
     return $files;
+}
+
+function deleteBackupFile($filePath, $pendingDeleteFile) {
+    clearstatcache(true, $filePath);
+
+    if (!is_file($filePath)) {
+        throw new RuntimeException('Backup file was not found.');
+    }
+
+    if (!is_writable($filePath)) {
+        throw new RuntimeException('Backup file cannot be deleted because it is not writable.');
+    }
+
+    for ($attempt = 1; $attempt <= 5; $attempt++) {
+        if (@unlink($filePath)) {
+            clearstatcache(true, $filePath);
+            return true;
+        }
+
+        usleep(200000);
+        clearstatcache(true, $filePath);
+
+        if (!is_file($filePath)) {
+            return true;
+        }
+    }
+
+    $fileName = basename($filePath);
+    $pending = pendingDeleteFiles($pendingDeleteFile);
+    $pending[] = $fileName;
+    savePendingDeleteFiles($pendingDeleteFile, $pending);
+    scheduleWindowsDelete($filePath);
+
+    return false;
 }
 
 function splitSqlStatements($sql) {
@@ -156,6 +257,8 @@ function recoverDatabaseBackup(PDO $conn, $backupFile) {
     }
 }
 
+cleanupPendingDeletes($backupDir, $pendingDeleteFile);
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $action = $_POST['action'] ?? '';
@@ -179,11 +282,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'delete') {
             $fileName = basename($_POST['backup_file'] ?? '');
             $filePath = $backupDir . DIRECTORY_SEPARATOR . $fileName;
-            if (!is_file($filePath)) {
-                throw new RuntimeException('Backup file was not found.');
+            if (deleteBackupFile($filePath, $pendingDeleteFile)) {
+                $message = "Backup {$fileName} was deleted permanently.";
+            } else {
+                $message = "Backup {$fileName} is being deleted in the background and was removed from this list.";
             }
-            unlink($filePath);
-            $message = "Backup {$fileName} was deleted permanently.";
         }
     } catch (Throwable $e) {
         $message = $e->getMessage();
@@ -191,7 +294,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$files = backupFiles($backupDir);
+cleanupPendingDeletes($backupDir, $pendingDeleteFile);
+$files = backupFiles($backupDir, pendingDeleteFiles($pendingDeleteFile));
 ?>
 
 <style>
