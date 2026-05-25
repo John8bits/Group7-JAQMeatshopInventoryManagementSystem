@@ -16,6 +16,12 @@ if (!$partColumnStmt->fetch(PDO::FETCH_ASSOC)) {
     $conn->exec("ALTER TABLE product ADD ProductPart VARCHAR(100) NULL AFTER ProductName");
 }
 
+$deletedColumnStmt = $conn->prepare("SHOW COLUMNS FROM product LIKE 'DeletedAt'");
+$deletedColumnStmt->execute();
+if (!$deletedColumnStmt->fetch(PDO::FETCH_ASSOC)) {
+    $conn->exec("ALTER TABLE product ADD DeletedAt DATETIME NULL");
+}
+
 function uploadProductImage($fieldName) {
     if (empty($_FILES[$fieldName]['name']) || $_FILES[$fieldName]['error'] === UPLOAD_ERR_NO_FILE) {
         return null;
@@ -136,29 +142,36 @@ if (isset($_POST['update'])) {
 if (isset($_GET['delete'])) {
     $productId = (int)$_GET['delete'];
 
-    $transactionStmt = $conn->prepare("SELECT COUNT(*) FROM transactions WHERE ProductID = ?");
-    $transactionStmt->execute([$productId]);
-    $transactionCount = (int)$transactionStmt->fetchColumn();
+    $stmt = $conn->prepare("UPDATE product SET Status = 'Unavailable', DeletedAt = NOW() WHERE ProductID = ?");
+    $stmt->execute([$productId]);
+}
 
-    if ($transactionCount > 0) {
-        $stmt = $conn->prepare("UPDATE product SET Status = 'Unavailable' WHERE ProductID = ?");
-        $stmt->execute([$productId]);
-    } else {
-        $stmt = $conn->prepare("DELETE FROM product WHERE ProductID = ?");
-        $stmt->execute([$productId]);
-    }
+if (isset($_GET['restore'])) {
+    $productId = (int)$_GET['restore'];
+    $stmt = $conn->prepare("UPDATE product SET Status = 'Available', DeletedAt = NULL WHERE ProductID = ?");
+    $stmt->execute([$productId]);
 }
 
 $stmt = $conn->prepare("
     SELECT p.*, c.CategoryName 
     FROM product p
     JOIN category c ON p.CategoryID = c.CategoryID
-    WHERE p.Status = 'Available'
+    WHERE p.Status = 'Available' AND p.DeletedAt IS NULL
     ORDER BY p.ProductName
 ");
 
 $stmt->execute();
 $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$deletedStmt = $conn->prepare("
+    SELECT p.*, c.CategoryName 
+    FROM product p
+    JOIN category c ON p.CategoryID = c.CategoryID
+    WHERE p.DeletedAt IS NOT NULL
+    ORDER BY p.DeletedAt DESC, p.ProductName
+");
+$deletedStmt->execute();
+$deletedProducts = $deletedStmt->fetchAll(PDO::FETCH_ASSOC);
 
 $catStmt = $conn->prepare("SELECT * FROM category");
 $catStmt->execute();
@@ -344,6 +357,28 @@ td {
     background:#175640;
 }
 
+.restore{
+    color:white;
+    background:#1f6f55;
+    padding:6px 10px;
+    border-radius:6px;
+    text-decoration:none;
+    display:inline-block;
+}
+
+.restore:hover{
+    background:#175640;
+}
+
+.deleted-section{
+    margin-top:28px;
+}
+
+.deleted-section h3{
+    color:white;
+    margin-bottom:10px;
+}
+
 .product-thumb{
     width:56px;
     height:44px;
@@ -410,6 +445,44 @@ td {
         </tr>
         <?php endforeach; ?>
     </table>
+
+    <div class="deleted-section">
+        <h3>Deleted Products</h3>
+        <table>
+            <tr>
+                <th>Name</th>
+                <th>Category</th>
+                <th>Part</th>
+                <th>Price</th>
+                <th>Stock</th>
+                <th>Deleted At</th>
+                <th>Action</th>
+            </tr>
+
+            <?php if (empty($deletedProducts)): ?>
+                <tr>
+                    <td colspan="7">No deleted products.</td>
+                </tr>
+            <?php else: ?>
+                <?php foreach ($deletedProducts as $row): ?>
+                    <tr>
+                        <td><?= htmlspecialchars($row['ProductName']) ?></td>
+                        <td><?= htmlspecialchars($row['CategoryName']) ?></td>
+                        <td><?= htmlspecialchars($row['ProductPart'] ?? '') ?></td>
+                        <td>â‚±<?= number_format((float)$row['PricePerKg'], 2) ?></td>
+                        <td><?= number_format((float)$row['StockWeight'], 2) ?> kg</td>
+                        <td><?= htmlspecialchars(date('M d, Y h:i A', strtotime($row['DeletedAt']))) ?></td>
+                        <td>
+                            <a class="restore" href="?page=inventory&restore=<?= htmlspecialchars($row['ProductID']) ?>"
+                               data-name="<?= htmlspecialchars($row['ProductName'], ENT_QUOTES) ?>">
+                               Restore
+                            </a>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </table>
+    </div>
 
 </div>
 
@@ -703,5 +776,31 @@ if (deleteButtons.length) {
         });
     });
 }
+
+document.querySelectorAll('.restore').forEach(function(button) {
+    button.addEventListener('click', function(event) {
+        event.preventDefault();
+
+        if (typeof Swal === 'undefined') {
+            window.location.href = button.href;
+            return;
+        }
+
+        Swal.fire({
+            title: 'Restore product?',
+            text: button.dataset.name + ' will be available again.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#1f6f55',
+            cancelButtonColor: '#6B4C3B',
+            confirmButtonText: 'Yes, restore',
+            cancelButtonText: 'Cancel'
+        }).then(function(result) {
+            if (result.isConfirmed) {
+                window.location.href = button.href;
+            }
+        });
+    });
+});
 
 </script>

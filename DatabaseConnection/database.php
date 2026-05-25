@@ -15,9 +15,19 @@
                 $this->user,$this->password);
 
                 $this->conn->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
+                $this->runAutomaticDailyBackup();
                 #echo "Connection success";
             }catch(PDOException $e){
+    $recoveryMessage = $this->handleManualRecoveryRequest();
+    if ($recoveryMessage === 'recovered') {
+        header("Location: " . $_SERVER['REQUEST_URI']);
+        exit;
+    }
+
     $message = htmlspecialchars($e->getMessage(), ENT_QUOTES);
+    $recoverNotice = $recoveryMessage !== null
+        ? "<div class=\"db-recover-notice\">" . htmlspecialchars($recoveryMessage, ENT_QUOTES) . "</div>"
+        : "";
     echo "<!doctype html>
 <html lang=\"en\">
 <head>
@@ -33,6 +43,16 @@
     .db-msg{font-size:14px;color:#94a3b8;margin:8px 0 0;line-height:1.6}
     .db-btn{margin-top:18px;display:inline-block;padding:10px 22px;border-radius:8px;background:#e74c3c;color:#fff;text-decoration:none;font-size:14px;font-weight:500;transition:background .2s}
     .db-btn:hover{background:#c0392b}
+    .db-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:18px}
+    .db-btn{margin-top:0;border:0;cursor:pointer;font-weight:700}
+    .db-btn.recover{background:#16a34a}
+    .db-btn.recover:hover{background:#15803d}
+    .db-recover-panel{display:none;margin-top:16px;background:#080e14;border:1px solid #1f2a37;border-radius:10px;padding:14px;text-align:left}
+    .db-recover-panel.open{display:block}
+    .db-recover-panel label{display:block;color:#94a3b8;font-size:12px;font-weight:700;margin-top:10px}
+    .db-recover-panel input{width:100%;box-sizing:border-box;margin-top:6px;padding:10px 12px;border-radius:8px;border:1px solid #263241;background:#0f1720;color:#e6eef6}
+    .db-recover-panel .db-btn{width:100%;margin-top:14px}
+    .db-recover-notice{margin-top:14px;color:#fecaca;background:#450a0a;border:1px solid #7f1d1d;padding:10px 12px;border-radius:8px;font-size:12px;text-align:left}
     .db-details{margin-top:14px;font-size:11px;color:#64748b;word-break:break-word;font-family:monospace;background:#080e14;padding:8px 12px;border-radius:6px;text-align:left}
     @keyframes flicker{0%,100%{opacity:1}25%{opacity:.5}50%{opacity:.9}75%{opacity:.4}}
     @keyframes spark{0%{opacity:1;transform:translate(0,0)}100%{opacity:0;transform:translate(var(--tx),var(--ty))}}
@@ -114,7 +134,21 @@
 
     <div class=\"db-title\">No Database Connection</div>
     <div class=\"db-msg\">The application could not connect to the database.<br>Please check your database server and configuration.</div>
-    <a class=\"db-btn\" href=\"#\" onclick=\"location.reload();return false;\">&#8635; Retry</a>
+    <div class=\"db-actions\">
+      <a class=\"db-btn\" href=\"#\" onclick=\"location.reload();return false;\">&#8635; Retry</a>
+      <button class=\"db-btn recover\" type=\"button\" onclick=\"document.getElementById('dbRecoverPanel').classList.toggle('open')\">Recover Database</button>
+    </div>
+    " . $recoverNotice . "
+    <form id=\"dbRecoverPanel\" class=\"db-recover-panel\" method=\"POST\">
+      <input type=\"hidden\" name=\"db_recover_action\" value=\"recover_latest_backup\">
+      <label>Admin Username
+        <input type=\"text\" name=\"db_admin_username\" autocomplete=\"username\" required>
+      </label>
+      <label>Admin Password
+        <input type=\"password\" name=\"db_admin_password\" autocomplete=\"current-password\" required>
+      </label>
+      <button class=\"db-btn recover\" type=\"submit\">Recover Latest Backup</button>
+    </form>
     <div class=\"db-details\">Error: " . $message . "</div>
   </div>
 </div>
@@ -123,6 +157,315 @@
     exit;
 }
 
+        }
+
+        private function handleManualRecoveryRequest() {
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST' || ($_POST['db_recover_action'] ?? '') !== 'recover_latest_backup') {
+                return null;
+            }
+
+            $backupFile = $this->latestBackupFile();
+            if ($backupFile === null) {
+                return 'No database backup file was found.';
+            }
+
+            $username = trim((string)($_POST['db_admin_username'] ?? ''));
+            $password = (string)($_POST['db_admin_password'] ?? '');
+
+            if (!$this->adminCredentialsMatchBackup($backupFile, $username, $password)) {
+                return 'Only an admin account from the latest backup can recover the database.';
+            }
+
+            try {
+                $this->recoverBackupFile($backupFile);
+                return 'recovered';
+            } catch (Throwable $restoreError) {
+                return 'Recovery failed: ' . $restoreError->getMessage();
+            }
+        }
+
+        private function recoverBackupFile($backupFile) {
+            $backupSql = file_get_contents($backupFile);
+            if ($backupSql === false || trim($backupSql) === '') {
+                throw new RuntimeException('Backup file is empty or cannot be read.');
+            }
+
+            $serverConn = new PDO("mysql:host=".$this->host, $this->user, $this->password);
+            $serverConn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $serverConn->exec("CREATE DATABASE IF NOT EXISTS `".$this->escapeIdentifier($this->dbname)."` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci");
+            $serverConn->exec("USE `".$this->escapeIdentifier($this->dbname)."`");
+
+            try {
+                $serverConn->exec("SET FOREIGN_KEY_CHECKS=0");
+                foreach ($this->splitSqlStatements($backupSql) as $statement) {
+                    $serverConn->exec($statement);
+                }
+                $serverConn->exec("SET FOREIGN_KEY_CHECKS=1");
+            } catch (Throwable $restoreError) {
+                $serverConn->exec("SET FOREIGN_KEY_CHECKS=1");
+                throw $restoreError;
+            }
+
+            $this->conn = new PDO("mysql:host=".$this->host . ";dbname=".$this->dbname, $this->user, $this->password);
+            $this->conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        }
+
+        private function latestBackupFile() {
+            $backupDir = realpath(__DIR__ . '/..') . DIRECTORY_SEPARATOR . 'backups' . DIRECTORY_SEPARATOR . 'database';
+            $files = glob($backupDir . DIRECTORY_SEPARATOR . '*.sql') ?: [];
+
+            if (empty($files)) {
+                return null;
+            }
+
+            usort($files, fn($a, $b) => filemtime($b) <=> filemtime($a));
+            return $files[0];
+        }
+
+        private function runAutomaticDailyBackup() {
+            try {
+                $now = new DateTime('now', new DateTimeZone('Asia/Singapore'));
+                $backupTime = new DateTime($now->format('Y-m-d') . ' 17:30:00', new DateTimeZone('Asia/Singapore'));
+
+                if ($now < $backupTime) {
+                    return;
+                }
+
+                $backupDir = $this->backupDirectory();
+                $markerFile = $backupDir . DIRECTORY_SEPARATOR . '.auto-backup-last';
+                $today = $now->format('Y-m-d');
+
+                if (is_file($markerFile) && trim((string)file_get_contents($markerFile)) === $today) {
+                    return;
+                }
+
+                $this->createDatabaseBackup($backupDir, 'auto_' . $this->dbname);
+                file_put_contents($markerFile, $today);
+            } catch (Throwable $backupError) {
+                $backupDir = $this->backupDirectory();
+                @file_put_contents(
+                    $backupDir . DIRECTORY_SEPARATOR . '.auto-backup-error.log',
+                    date('Y-m-d H:i:s') . ' ' . $backupError->getMessage() . PHP_EOL,
+                    FILE_APPEND
+                );
+            }
+        }
+
+        private function backupDirectory() {
+            $backupDir = realpath(__DIR__ . '/..') . DIRECTORY_SEPARATOR . 'backups' . DIRECTORY_SEPARATOR . 'database';
+            if (!is_dir($backupDir)) {
+                mkdir($backupDir, 0775, true);
+            }
+
+            return $backupDir;
+        }
+
+        private function backupSafeName($name) {
+            $name = trim((string)$name);
+            $name = preg_replace('/[^A-Za-z0-9_-]+/', '_', $name);
+            $name = trim($name, '_');
+            return $name !== '' ? $name : 'backup';
+        }
+
+        private function createDatabaseBackup($backupDir, $backupName) {
+            $safeName = $this->backupSafeName($backupName);
+            $createdAt = new DateTime('now', new DateTimeZone('Asia/Singapore'));
+            $fileName = $safeName . '_' . $createdAt->format('Ymd_His') . '.sql';
+            $filePath = $backupDir . DIRECTORY_SEPARATOR . $fileName;
+            $databaseName = (string)$this->conn->query("SELECT DATABASE()")->fetchColumn();
+
+            $tables = $this->conn->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'")->fetchAll(PDO::FETCH_NUM);
+            $dump = [];
+            $dump[] = "-- JAQ Meatshop automatic database backup";
+            $dump[] = "-- Database: `{$databaseName}`";
+            $dump[] = "-- Created: " . $createdAt->format('Y-m-d H:i:s');
+            $dump[] = "SET FOREIGN_KEY_CHECKS=0;";
+            $dump[] = "";
+
+            foreach ($tables as $tableRow) {
+                $table = $tableRow[0];
+                $quotedTable = '`' . str_replace('`', '``', $table) . '`';
+
+                $createStmt = $this->conn->query("SHOW CREATE TABLE {$quotedTable}")->fetch(PDO::FETCH_ASSOC);
+                $createSql = $createStmt['Create Table'] ?? array_values($createStmt)[1];
+
+                $dump[] = "DROP TABLE IF EXISTS {$quotedTable};";
+                $dump[] = $createSql . ';';
+                $dump[] = "";
+
+                $rows = $this->conn->query("SELECT * FROM {$quotedTable}", PDO::FETCH_ASSOC);
+                foreach ($rows as $row) {
+                    $columns = array_map(fn($column) => '`' . str_replace('`', '``', $column) . '`', array_keys($row));
+                    $values = array_map(fn($value) => $value === null ? 'NULL' : $this->conn->quote((string)$value), array_values($row));
+                    $dump[] = "INSERT INTO {$quotedTable} (" . implode(', ', $columns) . ") VALUES (" . implode(', ', $values) . ");";
+                }
+
+                $dump[] = "";
+            }
+
+            $dump[] = "SET FOREIGN_KEY_CHECKS=1;";
+            file_put_contents($filePath, implode("\n", $dump));
+
+            return $fileName;
+        }
+
+        private function adminCredentialsMatchBackup($backupFile, $username, $password) {
+            if ($username === '' || $password === '') {
+                return false;
+            }
+
+            $sql = file_get_contents($backupFile);
+            if ($sql === false || trim($sql) === '') {
+                return false;
+            }
+
+            preg_match_all('/INSERT\s+INTO\s+`?users`?\s*\((.*?)\)\s*VALUES\s*\((.*?)\)/is', $sql, $matches, PREG_SET_ORDER);
+            foreach ($matches as $match) {
+                $columns = array_map(function($column) {
+                    return trim($column, " `\t\n\r\0\x0B");
+                }, explode(',', $match[1]));
+                $values = $this->splitSqlValueList($match[2]);
+
+                if (count($columns) !== count($values)) {
+                    continue;
+                }
+
+                $row = array_combine($columns, array_map([$this, 'unquoteSqlValue'], $values));
+                $deletedAt = $row['DeletedAt'] ?? null;
+
+                if (($row['role'] ?? '') === 'admin'
+                    && ($row['username'] ?? '') === $username
+                    && ($deletedAt === null || strtoupper((string)$deletedAt) === 'NULL')
+                    && password_verify($password, (string)($row['password'] ?? ''))) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private function splitSqlValueList($sql) {
+            $values = [];
+            $current = '';
+            $length = strlen($sql);
+            $quote = null;
+            $escape = false;
+
+            for ($i = 0; $i < $length; $i++) {
+                $char = $sql[$i];
+
+                if ($quote !== null) {
+                    $current .= $char;
+                    if ($escape) {
+                        $escape = false;
+                    } elseif ($char === '\\') {
+                        $escape = true;
+                    } elseif ($char === $quote) {
+                        $quote = null;
+                    }
+                    continue;
+                }
+
+                if ($char === "'" || $char === '"') {
+                    $quote = $char;
+                    $current .= $char;
+                    continue;
+                }
+
+                if ($char === ',') {
+                    $values[] = trim($current);
+                    $current = '';
+                    continue;
+                }
+
+                $current .= $char;
+            }
+
+            $values[] = trim($current);
+            return $values;
+        }
+
+        private function unquoteSqlValue($value) {
+            $value = trim((string)$value);
+            if (strtoupper($value) === 'NULL') {
+                return null;
+            }
+
+            if (strlen($value) >= 2 && (($value[0] === "'" && substr($value, -1) === "'") || ($value[0] === '"' && substr($value, -1) === '"'))) {
+                $value = substr($value, 1, -1);
+                $value = str_replace(["\\'", '\\"', '\\\\', "''"], ["'", '"', '\\', "'"], $value);
+            }
+
+            return $value;
+        }
+
+        private function escapeIdentifier($identifier) {
+            return str_replace('`', '``', $identifier);
+        }
+
+        private function splitSqlStatements($sql) {
+            $statements = [];
+            $current = '';
+            $length = strlen($sql);
+            $quote = null;
+            $escape = false;
+
+            for ($i = 0; $i < $length; $i++) {
+                $char = $sql[$i];
+                $next = $i + 1 < $length ? $sql[$i + 1] : '';
+
+                if ($quote === null && $char === '-' && $next === '-') {
+                    while ($i < $length && $sql[$i] !== "\n") {
+                        $i++;
+                    }
+                    continue;
+                }
+
+                if ($quote === null && $char === '/' && $next === '*') {
+                    $i += 2;
+                    while ($i + 1 < $length && !($sql[$i] === '*' && $sql[$i + 1] === '/')) {
+                        $i++;
+                    }
+                    $i++;
+                    continue;
+                }
+
+                if ($quote !== null) {
+                    $current .= $char;
+                    if ($escape) {
+                        $escape = false;
+                    } elseif ($char === '\\') {
+                        $escape = true;
+                    } elseif ($char === $quote) {
+                        $quote = null;
+                    }
+                    continue;
+                }
+
+                if ($char === "'" || $char === '"' || $char === '`') {
+                    $quote = $char;
+                    $current .= $char;
+                    continue;
+                }
+
+                if ($char === ';') {
+                    $statement = trim($current);
+                    if ($statement !== '') {
+                        $statements[] = $statement;
+                    }
+                    $current = '';
+                    continue;
+                }
+
+                $current .= $char;
+            }
+
+            $statement = trim($current);
+            if ($statement !== '') {
+                $statements[] = $statement;
+            }
+
+            return $statements;
         }
 
     }

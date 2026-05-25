@@ -8,6 +8,10 @@ $backupDir = realpath(__DIR__ . '/..') . DIRECTORY_SEPARATOR . 'backups' . DIREC
 if (!is_dir($backupDir)) {
     mkdir($backupDir, 0775, true);
 }
+$deletedBackupDir = $backupDir . DIRECTORY_SEPARATOR . 'deleted';
+if (!is_dir($deletedBackupDir)) {
+    mkdir($deletedBackupDir, 0775, true);
+}
 
 $databaseName = (string)$conn->query("SELECT DATABASE()")->fetchColumn();
 $message = null;
@@ -43,22 +47,7 @@ function savePendingDeleteFiles($pendingDeleteFile, array $pending) {
     file_put_contents($pendingDeleteFile, json_encode($pending, JSON_PRETTY_PRINT));
 }
 
-function scheduleWindowsDelete($filePath) {
-    if (stripos(PHP_OS_FAMILY, 'Windows') !== 0) {
-        return;
-    }
-
-    $quotedPath = "'" . str_replace("'", "''", $filePath) . "'";
-    $script = "Start-Sleep -Seconds 2; Remove-Item -LiteralPath {$quotedPath} -Force -ErrorAction SilentlyContinue";
-    $encodedScript = function_exists('mb_convert_encoding')
-        ? mb_convert_encoding($script, 'UTF-16LE', 'UTF-8')
-        : iconv('UTF-8', 'UTF-16LE', $script);
-    $encoded = base64_encode($encodedScript);
-    $cmd = 'start /B powershell -NoProfile -WindowStyle Hidden -EncodedCommand ' . $encoded;
-    @pclose(@popen($cmd, 'r'));
-}
-
-function cleanupPendingDeletes($backupDir, $pendingDeleteFile) {
+function cleanupPendingDeletes($backupDir, $pendingDeleteFile, $deletedBackupDir) {
     $pending = pendingDeleteFiles($pendingDeleteFile);
     if (empty($pending)) {
         return;
@@ -74,8 +63,8 @@ function cleanupPendingDeletes($backupDir, $pendingDeleteFile) {
             continue;
         }
 
-        if (!@unlink($filePath)) {
-            scheduleWindowsDelete($filePath);
+        $targetPath = uniqueBackupPath($deletedBackupDir, $fileName);
+        if (!@rename($filePath, $targetPath)) {
             $remaining[] = $fileName;
         }
     }
@@ -93,7 +82,34 @@ function backupFiles($backupDir, array $pendingDeletes = []) {
     return $files;
 }
 
-function deleteBackupFile($filePath, $pendingDeleteFile) {
+function backupTypeLabel($fileName) {
+    if (str_starts_with($fileName, 'auto_')) {
+        return 'Automatic';
+    }
+
+    if (str_starts_with($fileName, 'before_recover_')) {
+        return 'Before Recovery';
+    }
+
+    return 'Manual';
+}
+
+function uniqueBackupPath($directory, $fileName) {
+    $safeFileName = basename($fileName);
+    $targetPath = $directory . DIRECTORY_SEPARATOR . $safeFileName;
+
+    if (!file_exists($targetPath)) {
+        return $targetPath;
+    }
+
+    $info = pathinfo($safeFileName);
+    $base = $info['filename'] ?? 'backup';
+    $extension = isset($info['extension']) ? '.' . $info['extension'] : '';
+
+    return $directory . DIRECTORY_SEPARATOR . $base . '_restored_' . date('Ymd_His') . $extension;
+}
+
+function deleteBackupFile($filePath, $deletedBackupDir) {
     clearstatcache(true, $filePath);
 
     if (!is_file($filePath)) {
@@ -104,27 +120,27 @@ function deleteBackupFile($filePath, $pendingDeleteFile) {
         throw new RuntimeException('Backup file cannot be deleted because it is not writable.');
     }
 
-    for ($attempt = 1; $attempt <= 5; $attempt++) {
-        if (@unlink($filePath)) {
-            clearstatcache(true, $filePath);
-            return true;
-        }
-
-        usleep(200000);
-        clearstatcache(true, $filePath);
-
-        if (!is_file($filePath)) {
-            return true;
-        }
+    $targetPath = uniqueBackupPath($deletedBackupDir, basename($filePath));
+    if (!@rename($filePath, $targetPath)) {
+        throw new RuntimeException('Backup file could not be moved to deleted backups.');
     }
 
-    $fileName = basename($filePath);
-    $pending = pendingDeleteFiles($pendingDeleteFile);
-    $pending[] = $fileName;
-    savePendingDeleteFiles($pendingDeleteFile, $pending);
-    scheduleWindowsDelete($filePath);
+    return basename($targetPath);
+}
 
-    return false;
+function restoreBackupFile($deletedFilePath, $backupDir) {
+    clearstatcache(true, $deletedFilePath);
+
+    if (!is_file($deletedFilePath)) {
+        throw new RuntimeException('Deleted backup file was not found.');
+    }
+
+    $targetPath = uniqueBackupPath($backupDir, basename($deletedFilePath));
+    if (!@rename($deletedFilePath, $targetPath)) {
+        throw new RuntimeException('Deleted backup file could not be restored.');
+    }
+
+    return basename($targetPath);
 }
 
 function splitSqlStatements($sql) {
@@ -257,7 +273,7 @@ function recoverDatabaseBackup(PDO $conn, $backupFile) {
     }
 }
 
-cleanupPendingDeletes($backupDir, $pendingDeleteFile);
+cleanupPendingDeletes($backupDir, $pendingDeleteFile, $deletedBackupDir);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
@@ -282,11 +298,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'delete') {
             $fileName = basename($_POST['backup_file'] ?? '');
             $filePath = $backupDir . DIRECTORY_SEPARATOR . $fileName;
-            if (deleteBackupFile($filePath, $pendingDeleteFile)) {
-                $message = "Backup {$fileName} was deleted permanently.";
-            } else {
-                $message = "Backup {$fileName} is being deleted in the background and was removed from this list.";
-            }
+            $deletedFile = deleteBackupFile($filePath, $deletedBackupDir);
+            $message = "Backup {$fileName} was moved to deleted backups as {$deletedFile}.";
+        }
+
+        if ($action === 'restore_deleted') {
+            $fileName = basename($_POST['backup_file'] ?? '');
+            $filePath = $deletedBackupDir . DIRECTORY_SEPARATOR . $fileName;
+            $restoredFile = restoreBackupFile($filePath, $backupDir);
+            $message = "Deleted backup {$fileName} was restored as {$restoredFile}.";
         }
     } catch (Throwable $e) {
         $message = $e->getMessage();
@@ -294,8 +314,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-cleanupPendingDeletes($backupDir, $pendingDeleteFile);
+cleanupPendingDeletes($backupDir, $pendingDeleteFile, $deletedBackupDir);
 $files = backupFiles($backupDir, pendingDeleteFiles($pendingDeleteFile));
+$deletedFiles = backupFiles($deletedBackupDir);
 ?>
 
 <style>
@@ -417,6 +438,32 @@ $files = backupFiles($backupDir, pendingDeleteFiles($pendingDeleteFile));
     color: #6B4C3B;
     padding: 24px;
 }
+
+.deleted-backup-heading {
+    margin: 8px 0 -6px;
+    color: #1A0F0A;
+}
+
+.backup-type {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 4px 9px;
+    background: #F5E6DF;
+    color: #7A3520;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.backup-type.auto {
+    background: #EAF5EE;
+    color: #2D7A4F;
+}
+
+.backup-type.recovery {
+    background: #EEF2FF;
+    color: #3730A3;
+}
 </style>
 
 <div class="backup-page">
@@ -474,6 +521,39 @@ $files = backupFiles($backupDir, pendingDeleteFiles($pendingDeleteFile));
             <?php endforeach; ?>
         <?php endif; ?>
     </table>
+
+    <h3 class="deleted-backup-heading">Deleted Backups</h3>
+    <table class="backup-table">
+        <tr>
+            <th>Database Name</th>
+            <th>Backup File</th>
+            <th>Date Deleted</th>
+            <th>Size</th>
+            <th>Action</th>
+        </tr>
+        <?php if (empty($deletedFiles)): ?>
+            <tr>
+                <td class="backup-empty" colspan="5">No deleted database backups.</td>
+            </tr>
+        <?php else: ?>
+            <?php foreach ($deletedFiles as $file): ?>
+                <?php $fileName = basename($file); ?>
+                <tr>
+                    <td><?= htmlspecialchars($databaseName) ?></td>
+                    <td><?= htmlspecialchars($fileName) ?></td>
+                    <td><?= htmlspecialchars(date('M d, Y h:i A', filemtime($file))) ?></td>
+                    <td><?= number_format(filesize($file) / 1024, 2) ?> KB</td>
+                    <td>
+                        <form method="POST" class="restore-backup-form">
+                            <input type="hidden" name="action" value="restore_deleted">
+                            <input type="hidden" name="backup_file" value="<?= htmlspecialchars($fileName) ?>">
+                            <button class="backup-btn recover" type="submit">Restore</button>
+                        </form>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+        <?php endif; ?>
+    </table>
 </div>
 
 <script>
@@ -509,13 +589,37 @@ document.querySelectorAll('.delete-form').forEach(function(form) {
             return;
         }
         Swal.fire({
-            title: 'Delete backup permanently?',
-            text: 'This backup file will be permanently deleted.',
+            title: 'Delete backup?',
+            text: 'This backup file will move to deleted backups and can be restored later.',
             icon: 'warning',
             showCancelButton: true,
             confirmButtonText: 'Yes, delete',
             cancelButtonText: 'Cancel',
             confirmButtonColor: '#D93025',
+            cancelButtonColor: '#6B4C3B'
+        }).then(function(result) {
+            if (result.isConfirmed) {
+                form.submit();
+            }
+        });
+    });
+});
+
+document.querySelectorAll('.restore-backup-form').forEach(function(form) {
+    form.addEventListener('submit', function(event) {
+        event.preventDefault();
+        if (typeof Swal === 'undefined') {
+            form.submit();
+            return;
+        }
+        Swal.fire({
+            title: 'Restore deleted backup?',
+            text: 'The backup file will return to the recoverable backup list.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, restore',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#1f6f55',
             cancelButtonColor: '#6B4C3B'
         }).then(function(result) {
             if (result.isConfirmed) {

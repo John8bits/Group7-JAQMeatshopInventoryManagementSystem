@@ -27,7 +27,13 @@ if ($_SERVER['REQUEST_METHOD'] === "POST") {
         $db = new Database();
         $conn = $db->conn;
 
-        $stmt = $conn->prepare("SELECT * FROM users WHERE username = :username AND role = :role");
+        $deletedColumnStmt = $conn->prepare("SHOW COLUMNS FROM users LIKE 'DeletedAt'");
+        $deletedColumnStmt->execute();
+        if (!$deletedColumnStmt->fetch(PDO::FETCH_ASSOC)) {
+            $conn->exec("ALTER TABLE users ADD DeletedAt DATETIME NULL");
+        }
+
+        $stmt = $conn->prepare("SELECT * FROM users WHERE username = :username AND role = :role AND DeletedAt IS NULL");
         $stmt->execute([
             ':username' => $username,
             ':role' => $role

@@ -41,6 +41,12 @@ if (!$typeColumnStmt->fetch(PDO::FETCH_ASSOC)) {
     $conn->exec("ALTER TABLE product ADD ProductType VARCHAR(50) NULL AFTER ProductPart");
 }
 
+$deletedColumnStmt = $conn->prepare("SHOW COLUMNS FROM product LIKE 'DeletedAt'");
+$deletedColumnStmt->execute();
+if (!$deletedColumnStmt->fetch(PDO::FETCH_ASSOC)) {
+    $conn->exec("ALTER TABLE product ADD DeletedAt DATETIME NULL");
+}
+
 function productSearchText($product) {
     return strtolower(implode(' ', [
         $product['ProductType'] ?? '',
@@ -105,7 +111,7 @@ $productStmt = $conn->prepare("
     SELECT p.ProductID, p.ProductName, p.ProductPart, p.ProductType, p.PricePerKg, p.StockWeight, p.ProductImage, c.CategoryName
     FROM product p
     JOIN category c ON p.CategoryID = c.CategoryID
-    WHERE p.Status = 'Available'
+    WHERE p.Status = 'Available' AND p.DeletedAt IS NULL
     ORDER BY COALESCE(p.ProductType, 'Meat'), c.CategoryName, p.ProductPart, p.ProductName
 ");
 $productStmt->execute();
@@ -177,7 +183,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action'])) {
         if (!empty($cart)) {
             try {
                 $conn->beginTransaction();
-                $stockStmt = $conn->prepare("SELECT StockWeight FROM product WHERE ProductID = ? FOR UPDATE");
+                $stockStmt = $conn->prepare("SELECT StockWeight FROM product WHERE ProductID = ? AND Status = 'Available' AND DeletedAt IS NULL FOR UPDATE");
                 $saleStmt = $conn->prepare("
                     INSERT INTO transactions (ProductID, WeightSold, TotalPrice, DateTime)
                     VALUES (?, ?, ?, NOW())

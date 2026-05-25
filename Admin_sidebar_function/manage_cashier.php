@@ -10,6 +10,12 @@ if (!$nameColumnStmt->fetch(PDO::FETCH_ASSOC)) {
     $conn->exec("ALTER TABLE users ADD cashier_name VARCHAR(100) NULL AFTER id");
 }
 
+$deletedColumnStmt = $conn->prepare("SHOW COLUMNS FROM users LIKE 'DeletedAt'");
+$deletedColumnStmt->execute();
+if (!$deletedColumnStmt->fetch(PDO::FETCH_ASSOC)) {
+    $conn->exec("ALTER TABLE users ADD DeletedAt DATETIME NULL");
+}
+
 if (isset($_POST['add'])) {
     $hashedPassword = password_hash($_POST['password'], PASSWORD_DEFAULT);
 
@@ -49,19 +55,33 @@ if (isset($_POST['update'])) {
 $cashierDeleted = false;
 
 if (isset($_GET['delete'])) {
-    $stmt = $conn->prepare("DELETE FROM users WHERE id = ? AND role = 'cashier'");
+    $stmt = $conn->prepare("UPDATE users SET DeletedAt = NOW() WHERE id = ? AND role = 'cashier'");
     $stmt->execute([(int)$_GET['delete']]);
     $cashierDeleted = true;
+}
+
+if (isset($_GET['restore'])) {
+    $stmt = $conn->prepare("UPDATE users SET DeletedAt = NULL WHERE id = ? AND role = 'cashier'");
+    $stmt->execute([(int)$_GET['restore']]);
 }
 
 $stmt = $conn->prepare("
     SELECT id, cashier_name, username
     FROM users
-    WHERE role = 'cashier'
+    WHERE role = 'cashier' AND DeletedAt IS NULL
     ORDER BY cashier_name, username
 ");
 $stmt->execute();
 $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$deletedStmt = $conn->prepare("
+    SELECT id, cashier_name, username, DeletedAt
+    FROM users
+    WHERE role = 'cashier' AND DeletedAt IS NOT NULL
+    ORDER BY DeletedAt DESC, cashier_name, username
+");
+$deletedStmt->execute();
+$deletedUsers = $deletedStmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <style>
@@ -179,6 +199,30 @@ $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 .btn-delete:hover {
     background: #9f2e0b;
+}
+
+.btn-restore {
+    border: none;
+    border-radius: 7px;
+    padding: 7px 10px;
+    color: white;
+    cursor: pointer;
+    text-decoration: none;
+    font-size: 13px;
+    background: #2D7A4F;
+}
+
+.btn-restore:hover {
+    background: #225f3d;
+}
+
+.deleted-cashier-section {
+    margin-top: 26px;
+}
+
+.deleted-cashier-section h3 {
+    color: #1A0F0A;
+    margin: 0 0 12px;
 }
 
 .empty-row {
@@ -339,6 +383,44 @@ $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <?php endforeach; ?>
         <?php endif; ?>
     </table>
+
+    <div class="deleted-cashier-section">
+        <h3>Deleted Cashiers</h3>
+        <table class="cashier-table">
+            <tr>
+                <th>Cashier Name</th>
+                <th>Username</th>
+                <th>Deleted At</th>
+                <th>Action</th>
+            </tr>
+            <?php if (empty($deletedUsers)): ?>
+                <tr>
+                    <td class="empty-row" colspan="4">No deleted cashier accounts.</td>
+                </tr>
+            <?php else: ?>
+                <?php foreach ($deletedUsers as $row): ?>
+                    <tr>
+                        <td class="cashier-name">
+                            <?= htmlspecialchars($row['cashier_name'] ?: $row['username']) ?>
+                        </td>
+                        <td class="cashier-username">
+                            <?= htmlspecialchars($row['username']) ?>
+                        </td>
+                        <td class="cashier-username">
+                            <?= htmlspecialchars(date('M d, Y h:i A', strtotime($row['DeletedAt']))) ?>
+                        </td>
+                        <td>
+                            <a class="btn-restore"
+                               href="?page=cashier&restore=<?= htmlspecialchars($row['id']) ?>"
+                               data-name="<?= htmlspecialchars($row['cashier_name'] ?: $row['username'], ENT_QUOTES) ?>">
+                               Restore
+                            </a>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </table>
+    </div>
 </div>
 
 <div id="addCashierModal" class="cashier-modal">
@@ -441,6 +523,32 @@ document.querySelectorAll('.btn-delete').forEach(function(button) {
             confirmButtonColor: '#D53E0F',
             cancelButtonColor: '#6B4C3B',
             confirmButtonText: 'Yes, delete',
+            cancelButtonText: 'Cancel'
+        }).then(function(result) {
+            if (result.isConfirmed) {
+                window.location.href = button.href;
+            }
+        });
+    });
+});
+
+document.querySelectorAll('.btn-restore').forEach(function(button) {
+    button.addEventListener('click', function(event) {
+        event.preventDefault();
+
+        if (typeof Swal === 'undefined') {
+            window.location.href = button.href;
+            return;
+        }
+
+        Swal.fire({
+            title: 'Restore cashier?',
+            text: button.dataset.name + ' will regain cashier access.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#2D7A4F',
+            cancelButtonColor: '#6B4C3B',
+            confirmButtonText: 'Yes, restore',
             cancelButtonText: 'Cancel'
         }).then(function(result) {
             if (result.isConfirmed) {

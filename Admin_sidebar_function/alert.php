@@ -4,10 +4,16 @@ require_once "../DatabaseConnection/database.php";
 $db = new Database();
 $conn = $db->conn;
 
+$deletedColumnStmt = $conn->prepare("SHOW COLUMNS FROM product LIKE 'DeletedAt'");
+$deletedColumnStmt->execute();
+if (!$deletedColumnStmt->fetch(PDO::FETCH_ASSOC)) {
+    $conn->exec("ALTER TABLE product ADD DeletedAt DATETIME NULL");
+}
+
 $stmt = $conn->prepare("
     SELECT ProductName, StockWeight 
     FROM product 
-    WHERE Status = 'Available' AND StockWeight < 5
+    WHERE Status = 'Available' AND DeletedAt IS NULL AND StockWeight < 5
     ORDER BY ProductName
 ");
 $stmt->execute();

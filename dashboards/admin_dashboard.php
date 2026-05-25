@@ -22,16 +22,22 @@ require_once '../DatabaseConnection/database.php';
 $db = new Database();
 $conn = $db->conn;
 
+$deletedColumnStmt = $conn->prepare("SHOW COLUMNS FROM product LIKE 'DeletedAt'");
+$deletedColumnStmt->execute();
+if (!$deletedColumnStmt->fetch(PDO::FETCH_ASSOC)) {
+    $conn->exec("ALTER TABLE product ADD DeletedAt DATETIME NULL");
+}
+
 $threshold = 5;
-$countStmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM product WHERE Status = 'Available' AND StockWeight < ?");
+$countStmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM product WHERE Status = 'Available' AND DeletedAt IS NULL AND StockWeight < ?");
 $countStmt->execute([$threshold]);
 $alertCount = (int)($countStmt->fetch(PDO::FETCH_ASSOC)['cnt'] ?? 0);
 
-$inventoryStmt = $conn->prepare("SELECT COALESCE(SUM(StockWeight), 0) AS total_stock FROM product WHERE Status = 'Available'");
+$inventoryStmt = $conn->prepare("SELECT COALESCE(SUM(StockWeight), 0) AS total_stock FROM product WHERE Status = 'Available' AND DeletedAt IS NULL");
 $inventoryStmt->execute();
 $totalStock = (float)($inventoryStmt->fetch(PDO::FETCH_ASSOC)['total_stock'] ?? 0);
 
-$productStmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM product WHERE Status = 'Available'");
+$productStmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM product WHERE Status = 'Available' AND DeletedAt IS NULL");
 $productStmt->execute();
 $productCount = (int)($productStmt->fetch(PDO::FETCH_ASSOC)['cnt'] ?? 0);
 

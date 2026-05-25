@@ -11,6 +11,7 @@ $requiredColumns = [
     'Address'        => "VARCHAR(255) NULL",
     'Status'         => "VARCHAR(30) NOT NULL DEFAULT 'Active'",
     'DateAdded'      => "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+    'DeletedAt'      => "DATETIME NULL",
 ];
 
 $tableExists = $conn->query("SHOW TABLES LIKE 'supplier'")->fetch(PDO::FETCH_ASSOC);
@@ -22,7 +23,8 @@ if (!$tableExists) {
         Phone VARCHAR(40) NULL,
         Address VARCHAR(255) NULL,
         Status VARCHAR(30) NOT NULL DEFAULT 'Active',
-        DateAdded DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        DateAdded DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        DeletedAt DATETIME NULL
     )");
 } else {
     $existingColumns = $conn->query("SHOW COLUMNS FROM supplier")->fetchAll(PDO::FETCH_COLUMN, 0);
@@ -67,18 +69,33 @@ if (isset($_POST['update'])) {
 }
 
 if (isset($_GET['delete'])) {
-    $stmt = $conn->prepare("DELETE FROM supplier WHERE SupplierID = ?");
+    $stmt = $conn->prepare("UPDATE supplier SET Status = 'Inactive', DeletedAt = NOW() WHERE SupplierID = ?");
     $stmt->execute([(int)$_GET['delete']]);
     $supplierDeleted = true;
+}
+
+if (isset($_GET['restore'])) {
+    $stmt = $conn->prepare("UPDATE supplier SET Status = 'Active', DeletedAt = NULL WHERE SupplierID = ?");
+    $stmt->execute([(int)$_GET['restore']]);
 }
 
 $stmt = $conn->prepare("
     SELECT *
     FROM supplier
+    WHERE DeletedAt IS NULL
     ORDER BY SupplierName
 ");
 $stmt->execute();
 $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$deletedStmt = $conn->prepare("
+    SELECT *
+    FROM supplier
+    WHERE DeletedAt IS NOT NULL
+    ORDER BY DeletedAt DESC, SupplierName
+");
+$deletedStmt->execute();
+$deletedSuppliers = $deletedStmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <style>
@@ -210,6 +227,30 @@ $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 .btn-delete:hover {
     background: #9f2e0b;
+}
+
+.btn-restore {
+    border: none;
+    border-radius: 7px;
+    padding: 7px 10px;
+    color: white;
+    cursor: pointer;
+    text-decoration: none;
+    font-size: 13px;
+    background: #2D7A4F;
+}
+
+.btn-restore:hover {
+    background: #225f3d;
+}
+
+.deleted-supplier-section {
+    margin-top: 26px;
+}
+
+.deleted-supplier-section h3 {
+    color: #1A0F0A;
+    margin: 0 0 12px;
 }
 
 .empty-row {
@@ -383,6 +424,40 @@ $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <?php endforeach; ?>
         <?php endif; ?>
     </table>
+
+    <div class="deleted-supplier-section">
+        <h3>Deleted Suppliers</h3>
+        <table class="supplier-table">
+            <tr>
+                <th>Supplier</th>
+                <th>Contact Person</th>
+                <th>Phone</th>
+                <th>Deleted At</th>
+                <th>Action</th>
+            </tr>
+            <?php if (empty($deletedSuppliers)): ?>
+                <tr>
+                    <td class="empty-row" colspan="5">No deleted suppliers.</td>
+                </tr>
+            <?php else: ?>
+                <?php foreach ($deletedSuppliers as $row): ?>
+                    <tr>
+                        <td class="supplier-name"><?= htmlspecialchars($row['SupplierName']) ?></td>
+                        <td class="supplier-muted"><?= htmlspecialchars($row['ContactPerson'] ?: '-') ?></td>
+                        <td class="supplier-muted"><?= htmlspecialchars($row['Phone'] ?: '-') ?></td>
+                        <td class="supplier-muted"><?= htmlspecialchars(date('M d, Y h:i A', strtotime($row['DeletedAt']))) ?></td>
+                        <td>
+                            <a class="btn-restore"
+                               href="?page=supplier&restore=<?= htmlspecialchars($row['SupplierID']) ?>"
+                               data-name="<?= htmlspecialchars($row['SupplierName'], ENT_QUOTES) ?>">
+                               Restore
+                            </a>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </table>
+    </div>
 </div>
 
 <div id="addSupplierModal" class="supplier-modal">
@@ -509,6 +584,32 @@ document.querySelectorAll('.btn-delete').forEach(function(button) {
             confirmButtonColor: '#D53E0F',
             cancelButtonColor: '#6B4C3B',
             confirmButtonText: 'Yes, delete',
+            cancelButtonText: 'Cancel'
+        }).then(function(result) {
+            if (result.isConfirmed) {
+                window.location.href = button.href;
+            }
+        });
+    });
+});
+
+document.querySelectorAll('.btn-restore').forEach(function(button) {
+    button.addEventListener('click', function(event) {
+        event.preventDefault();
+
+        if (typeof Swal === 'undefined') {
+            window.location.href = button.href;
+            return;
+        }
+
+        Swal.fire({
+            title: 'Restore supplier?',
+            text: button.dataset.name + ' will return to active supplier records.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#2D7A4F',
+            cancelButtonColor: '#6B4C3B',
+            confirmButtonText: 'Yes, restore',
             cancelButtonText: 'Cancel'
         }).then(function(result) {
             if (result.isConfirmed) {
