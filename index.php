@@ -29,7 +29,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background-image: url('login.png');
+        background-image: url('Authentication/login.png');
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
@@ -45,7 +45,7 @@
         /* height:50%; */
         box-shadow: 0 1px 5px rgba(236, 233, 233, 0.94); 
         text-align: center;
-        /* border:4px solid black; */
+        border:1px solid black;
     }
 
     h2 {
@@ -133,7 +133,7 @@
 <div class ="container">
     
     <h2>LOGIN</h2>
-    <form method="POST" action="login_process.php">
+    <form method="POST" action="Authentication/login_process.php">
 
         <?php if (!empty($errors['invalid'])): ?>
             <div class="error"><?= $errors['invalid']; ?></div>
